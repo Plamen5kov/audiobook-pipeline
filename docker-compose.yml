@@ -14,30 +14,15 @@ services:
       - N8N_SECURE_COOKIE=false
     restart: unless-stopped
 
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-models:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    restart: unless-stopped
-
   text-analyzer:
     build: ./services/text-analyzer
     ports:
       - "8001:8001"
     environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - MODEL_NAME=llama3.1:70b
-    depends_on:
-      - ollama
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   script-adapter:
@@ -45,10 +30,10 @@ services:
     ports:
       - "8002:8002"
     environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - MODEL_NAME=llama3.1:70b
-    depends_on:
-      - ollama
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   xtts-v2:
@@ -59,12 +44,16 @@ services:
       - ./voices:/voices:ro
       - ./data/intermediate:/data/intermediate
       - xtts-models:/root/.local/share/tts
+    ipc: host
+    ulimits:
+      memlock: -1
+      stack: 67108864
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: 1
+              count: all
               capabilities: [gpu]
     restart: unless-stopped
 
@@ -78,5 +67,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  ollama-models:
   xtts-models:
