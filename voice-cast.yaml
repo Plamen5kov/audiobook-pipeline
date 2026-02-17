@@ -1,0 +1,18 @@
+# Voice Cast Configuration
+# Maps characters to TTS engines and voice profiles.
+# Characters not listed here will use the "default" profile.
+
+voices:
+  narrator:
+    tts_service: xtts-v2         # docker compose service name
+    tts_port: 8003
+    reference_audio: ./voices/narrator_ref.wav
+    speed: 0.95
+    style_notes: calm, measured, storytelling tone
+
+  default:
+    tts_service: xtts-v2
+    tts_port: 8003
+    reference_audio: ./voices/generic_neutral.wav
+    speed: 1.0
+    style_notes: neutral

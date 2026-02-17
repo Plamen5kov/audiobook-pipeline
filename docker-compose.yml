@@ -1,0 +1,82 @@
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    ports:
+      - "5678:5678"
+    volumes:
+      - ./n8n-data:/home/node/.n8n
+      - ./voices:/voices:ro
+      - ./input:/input:ro
+      - ./output:/output
+      - ./data:/data
+      - ./voice-cast.yaml:/voice-cast.yaml:ro
+    environment:
+      - N8N_SECURE_COOKIE=false
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  text-analyzer:
+    build: ./services/text-analyzer
+    ports:
+      - "8001:8001"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - MODEL_NAME=llama3.1:70b
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+  script-adapter:
+    build: ./services/script-adapter
+    ports:
+      - "8002:8002"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - MODEL_NAME=llama3.1:70b
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+  xtts-v2:
+    build: ./services/xtts-v2
+    ports:
+      - "8003:8003"
+    volumes:
+      - ./voices:/voices:ro
+      - ./data/intermediate:/data/intermediate
+      - xtts-models:/root/.local/share/tts
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  audio-assembly:
+    build: ./services/audio-assembly
+    ports:
+      - "8005:8005"
+    volumes:
+      - ./data/intermediate:/data/intermediate:ro
+      - ./output:/output
+    restart: unless-stopped
+
+volumes:
+  ollama-models:
+  xtts-models:
