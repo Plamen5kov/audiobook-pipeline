@@ -64,11 +64,12 @@ async def assemble(request: AssembleRequest):
     output_path = os.path.join(OUTPUT_DIR, output_filename)
     combined.export(output_path, format="wav")
 
-    return FileResponse(
-        output_path,
-        media_type="audio/wav",
-        filename=output_filename,
-    )
+    return {
+        "file_path": output_path,
+        "filename": output_filename,
+        "duration_ms": len(combined),
+        "clips_count": len(clips_sorted),
+    }
 
 
 @app.get("/health")
