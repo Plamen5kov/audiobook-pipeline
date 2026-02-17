@@ -61,6 +61,8 @@ services:
       - ./voices:/voices:ro
       - ./data/intermediate:/data/intermediate
       - xtts-models:/root/.local/share/tts
+    environment:
+      - COQUI_TOS_AGREED=1
     ipc: host
     ulimits:
       memlock: -1

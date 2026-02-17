@@ -82,10 +82,13 @@ async def analyze_text(request: AnalyzeRequest):
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail=f"LLM returned invalid JSON: {raw_text[:500]}")
 
+    characters = [c for c in parsed.get("characters", []) if isinstance(c, dict)]
+    segments = [s for s in parsed.get("segments", []) if isinstance(s, dict)]
+
     return AnalyzeResponse(
         title=request.title,
-        characters=parsed.get("characters", []),
-        segments=parsed.get("segments", []),
+        characters=characters,
+        segments=segments,
     )
 
 
