@@ -57,6 +57,9 @@ async def synthesize(request: SynthesizeRequest):
     if tts_model is None:
         raise HTTPException(status_code=503, detail="Model not loaded yet")
 
+    if not request.text or not request.text.strip():
+        raise HTTPException(status_code=400, detail="text field is empty")
+
     if not os.path.exists(request.reference_audio_path):
         raise HTTPException(status_code=400, detail=f"Reference audio not found: {request.reference_audio_path}")
 

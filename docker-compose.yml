@@ -12,6 +12,8 @@ services:
       - ./voice-cast.yaml:/voice-cast.yaml:ro
     environment:
       - N8N_SECURE_COOKIE=false
+      - N8N_ALLOW_EXEC=true
+      - N8N_RESTRICT_FILE_ACCESS_TO=/input;/output;/data
     restart: unless-stopped
 
   ollama:
@@ -21,7 +23,7 @@ services:
     volumes:
       - root_ollama:/root/.ollama
     environment:
-      - OLLAMA_CONTEXT_LENGTH=4096
+      - OLLAMA_CONTEXT_LENGTH=16384
     deploy:
       resources:
         reservations:

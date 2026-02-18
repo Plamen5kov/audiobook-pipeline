@@ -16,37 +16,40 @@ app = FastAPI(title="Text Analyzer", description="Parses chapter text into struc
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 MODEL_NAME = os.getenv("MODEL_NAME", "llama3.1:70b")
 
-SYSTEM_PROMPT = """You are a text analysis engine for audiobook production. Given a chapter of text, you must:
+SYSTEM_PROMPT = """You are a text analysis engine for audiobook production. Your job is to analyze the EXACT TEXT provided by the user and break it into segments for narration and dialogue.
 
-1. Identify all characters who speak in the text.
-2. Break the text into ordered segments — each segment is either narration or a single character's dialogue.
-3. For each segment, detect the emotional tone and intensity.
+CRITICAL RULES — you must follow these without exception:
+1. NEVER invent, paraphrase, or hallucinate any text. Every "original_text" value must be copied VERBATIM from the user's input.
+2. NEVER produce an empty "original_text". If a segment has no text, do not include that segment.
+3. Dialogue segments are ONLY for text explicitly enclosed in quotation marks ("...") in the source. Include the dialogue AND its attribution ("he said", "she whispered") together as one segment.
+4. Everything else — narration, description, action — belongs to the narrator speaker.
+5. Keep all segments in reading order. Do not skip any text from the source.
 
-Return ONLY valid JSON matching this schema (no markdown, no explanation):
+Return ONLY valid JSON matching this schema exactly (no markdown, no explanation, no extra keys):
 
 {
   "characters": [
-    {"name": "narrator", "description": "..."},
+    {"name": "narrator", "description": "the narrative voice"},
     {"name": "CharacterName", "description": "brief description based on text clues"}
   ],
   "segments": [
     {
       "id": 1,
-      "speaker": "narrator" or "CharacterName",
-      "original_text": "exact text from the source",
-      "emotion": "neutral|happy|sad|angry|fearful|excited|tense|contemplative",
-      "intensity": 0.0 to 1.0,
-      "pause_before_ms": milliseconds of pause before this segment (0 for first)
+      "speaker": "narrator",
+      "original_text": "verbatim text copied from the source",
+      "emotion": "neutral",
+      "intensity": 0.5,
+      "pause_before_ms": 0
     }
   ]
 }
 
-Rules:
-- Always include "narrator" in characters.
-- Keep segments in reading order.
-- Dialogue includes the quoted text AND any attribution ("he said") as original_text — the script adapter will clean it later.
-- Narration segments can span multiple sentences but should break at natural paragraph or scene boundaries.
-- pause_before_ms: use 0 for continuous flow, 300 for dialogue turns, 800 for scene/paragraph breaks."""
+Schema rules:
+- "speaker": use "narrator" for narration/description, or the character's exact name for quoted dialogue.
+- "emotion": one of neutral, happy, sad, angry, fearful, excited, tense, contemplative.
+- "intensity": 0.0 to 1.0.
+- "pause_before_ms": 0 for first segment and continuous flow, 300 for dialogue turns, 800 for paragraph/scene breaks.
+- Always include "narrator" in the characters list."""
 
 
 class AnalyzeRequest(BaseModel):
@@ -72,6 +75,7 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
 @app.post("/analyze", response_model=AnalyzeResponse)
 async def analyze_text(request: AnalyzeRequest):
     log.info("POST /analyze — title=%r text_length=%d", request.title, len(request.text))
+    log.info("Text preview: %.200s", request.text)
 
     prompt = f"Analyze this chapter text:\n\n{request.text}"
 
@@ -86,6 +90,7 @@ async def analyze_text(request: AnalyzeRequest):
                     "system": SYSTEM_PROMPT,
                     "stream": False,
                     "format": "json",
+                    "options": {"num_predict": -1},
                 },
             )
             response.raise_for_status()

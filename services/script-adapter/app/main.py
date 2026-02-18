@@ -95,6 +95,7 @@ async def adapt_script(request: AdaptRequest):
                     "system": SYSTEM_PROMPT,
                     "stream": False,
                     "format": "json",
+                    "options": {"num_predict": -1},
                 },
             )
             response.raise_for_status()
