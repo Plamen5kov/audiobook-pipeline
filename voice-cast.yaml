@@ -4,15 +4,29 @@
 
 voices:
   narrator:
-    tts_service: xtts-v2         # docker compose service name
+    tts_service: xtts-v2
     tts_port: 8003
-    reference_audio: ./voices/narrator_ref.wav
+    reference_audio: /voices/narrator.wav
     speed: 0.95
     style_notes: calm, measured, storytelling tone
+
+  Elena:
+    tts_service: xtts-v2
+    tts_port: 8003
+    reference_audio: /voices/elena.wav
+    speed: 1.0
+    style_notes: young, curious, energetic
+
+  Marcus:
+    tts_service: xtts-v2
+    tts_port: 8003
+    reference_audio: /voices/marcus.wav
+    speed: 1.0
+    style_notes: cautious, guarded
 
   default:
     tts_service: xtts-v2
     tts_port: 8003
-    reference_audio: ./voices/generic_neutral.wav
+    reference_audio: /voices/generic_neutral.wav
     speed: 1.0
     style_notes: neutral

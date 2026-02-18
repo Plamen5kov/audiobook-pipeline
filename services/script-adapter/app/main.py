@@ -85,7 +85,7 @@ async def adapt_script(request: AdaptRequest):
     prompt = f"Adapt these segments for spoken delivery:\n\n{json.dumps(segments_for_prompt, indent=2)}"
 
     log.info("Calling Ollama model=%s", MODEL_NAME)
-    async with httpx.AsyncClient(timeout=300.0) as client:
+    async with httpx.AsyncClient(timeout=None) as client:
         try:
             response = await client.post(
                 f"{OLLAMA_BASE_URL}/api/generate",

@@ -42,11 +42,19 @@ async def load_model():
     log.info("XTTS v2 model loaded")
 
 
+VOICE_CAST = {
+    "narrator": "/voices/narrator.wav",
+    "Elena":    "/voices/elena.wav",
+    "Marcus":   "/voices/marcus.wav",
+}
+DEFAULT_VOICE = "/voices/generic_neutral.wav"
+
+
 class SynthesizeRequest(BaseModel):
     text: str
     segment_id: int = 0                              # used in filename to preserve order
-    speaker_id: str = "default"
-    reference_audio_path: str = "/voices/generic_neutral.wav"
+    speaker: str = "default"
+    reference_audio_path: str = ""                   # optional override; resolved from VOICE_CAST if empty
     emotion: str = "neutral"
     intensity: float = 0.5
     speed: float = 1.0
@@ -60,18 +68,20 @@ async def synthesize(request: SynthesizeRequest):
     if not request.text or not request.text.strip():
         raise HTTPException(status_code=400, detail="text field is empty")
 
-    if not os.path.exists(request.reference_audio_path):
-        raise HTTPException(status_code=400, detail=f"Reference audio not found: {request.reference_audio_path}")
+    ref = request.reference_audio_path or VOICE_CAST.get(request.speaker, DEFAULT_VOICE)
+
+    if not os.path.exists(ref):
+        raise HTTPException(status_code=400, detail=f"Reference audio not found: {ref}")
 
     # Filename encodes segment order so audio-assembly can sort correctly
-    output_filename = f"seg{request.segment_id:04d}_{request.speaker_id}.wav"
+    output_filename = f"seg{request.segment_id:04d}_{request.speaker}.wav"
     output_path = os.path.join(OUTPUT_DIR, output_filename)
 
-    log.info("Synthesizing segment %d speaker=%s text=%.60s", request.segment_id, request.speaker_id, request.text)
+    log.info("Synthesizing segment %d speaker=%s ref=%s text=%.60s", request.segment_id, request.speaker, ref, request.text)
     try:
         tts_model.tts_to_file(
             text=request.text,
-            speaker_wav=request.reference_audio_path,
+            speaker_wav=ref,
             language="en",
             file_path=output_path,
             speed=request.speed,
@@ -83,7 +93,7 @@ async def synthesize(request: SynthesizeRequest):
     log.info("Segment %d saved to %s", request.segment_id, output_path)
     return {
         "segment_id": request.segment_id,
-        "speaker_id": request.speaker_id,
+        "speaker": request.speaker,
         "file_path": output_path,
         "filename": output_filename,
     }

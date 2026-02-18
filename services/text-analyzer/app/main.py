@@ -80,7 +80,7 @@ async def analyze_text(request: AnalyzeRequest):
     prompt = f"Analyze this chapter text:\n\n{request.text}"
 
     log.info("Calling Ollama model=%s", MODEL_NAME)
-    async with httpx.AsyncClient(timeout=300.0) as client:
+    async with httpx.AsyncClient(timeout=None) as client:
         try:
             response = await client.post(
                 f"{OLLAMA_BASE_URL}/api/generate",
