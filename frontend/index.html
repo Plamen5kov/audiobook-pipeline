@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audiobook Generator</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3354;
+      --accent: #6c63ff;
+      --accent-hover: #7d75ff;
+      --text: #e8e9f0;
+      --text-dim: #8b8fa8;
+      --success: #4caf7d;
+      --warning: #f0a500;
+      --error: #e05252;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px 80px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    header h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    header h1 span { color: var(--accent); }
+
+    header p {
+      color: var(--text-dim);
+      margin-top: 8px;
+      font-size: 0.95rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px;
+      width: 100%;
+      max-width: 720px;
+      margin-bottom: 20px;
+    }
+
+    .card h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 18px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.875rem;
+      color: var(--text-dim);
+      margin-bottom: 6px;
+    }
+
+    input[type="text"], textarea {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.95rem;
+      padding: 10px 14px;
+      outline: none;
+      transition: border-color 0.2s;
+      font-family: inherit;
+    }
+
+    input[type="text"]:focus, textarea:focus {
+      border-color: var(--accent);
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 220px;
+      line-height: 1.6;
+    }
+
+    .field { margin-bottom: 18px; }
+    .field:last-child { margin-bottom: 0; }
+
+    button.primary {
+      width: 100%;
+      padding: 14px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+    }
+
+    button.primary:hover:not(:disabled) { background: var(--accent-hover); }
+    button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Progress */
+    #progress-card { display: none; }
+
+    .phase-list { list-style: none; }
+
+    .phase-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.95rem;
+    }
+
+    .phase-item:last-child { border-bottom: none; }
+
+    .phase-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      font-size: 0.8rem;
+    }
+
+    .phase-icon.pending  { background: var(--surface2); color: var(--text-dim); }
+    .phase-icon.running  { background: var(--accent); color: #fff; }
+    .phase-icon.done     { background: var(--success); color: #fff; }
+    .phase-icon.error    { background: var(--error); color: #fff; }
+
+    .phase-label { flex: 1; }
+    .phase-label .name { font-weight: 500; }
+    .phase-label .detail { font-size: 0.8rem; color: var(--text-dim); margin-top: 2px; }
+
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255,255,255,0.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Result */
+    #result-card { display: none; }
+
+    .audio-player {
+      width: 100%;
+      margin-bottom: 14px;
+      accent-color: var(--accent);
+    }
+
+    .download-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      background: var(--success);
+      color: #fff;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.95rem;
+      transition: opacity 0.2s;
+    }
+
+    .download-btn:hover { opacity: 0.85; }
+
+    .error-msg {
+      color: var(--error);
+      font-size: 0.9rem;
+      margin-top: 12px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Audiobook <span>Generator</span></h1>
+  <p>Paste your chapter text and generate a fully narrated audiobook with distinct character voices.</p>
+</header>
+
+<!-- Input -->
+<div class="card" id="input-card">
+  <h2>Chapter Input</h2>
+  <div class="field">
+    <label for="title">Chapter Title</label>
+    <input type="text" id="title" placeholder="e.g. Chapter 1: The Awakening" value="Chapter 1: The Awakening">
+  </div>
+  <div class="field">
+    <label for="text">Chapter Text</label>
+    <textarea id="text" placeholder="Paste your chapter text here..."></textarea>
+  </div>
+  <div class="field">
+    <button class="primary" id="generate-btn" onclick="generate()">Generate Audiobook</button>
+  </div>
+  <p id="error-msg" class="error-msg" style="display:none"></p>
+</div>
+
+<!-- Progress -->
+<div class="card" id="progress-card">
+  <h2>Progress</h2>
+  <ul class="phase-list">
+    <li class="phase-item" id="phase-analyzing">
+      <div class="phase-icon pending" id="icon-analyzing">1</div>
+      <div class="phase-label">
+        <div class="name">Analyzing text</div>
+        <div class="detail" id="detail-analyzing">Identifying speakers, emotions, and segments…</div>
+      </div>
+    </li>
+    <li class="phase-item" id="phase-synthesizing">
+      <div class="phase-icon pending" id="icon-synthesizing">2</div>
+      <div class="phase-label">
+        <div class="name">Synthesizing audio</div>
+        <div class="detail" id="detail-synthesizing">Waiting for analysis to complete…</div>
+      </div>
+    </li>
+    <li class="phase-item" id="phase-assembling">
+      <div class="phase-icon pending" id="icon-assembling">3</div>
+      <div class="phase-label">
+        <div class="name">Assembling final file</div>
+        <div class="detail" id="detail-assembling">Waiting…</div>
+      </div>
+    </li>
+  </ul>
+</div>
+
+<!-- Result -->
+<div class="card" id="result-card">
+  <h2>Your Audiobook</h2>
+  <audio class="audio-player" id="audio-player" controls></audio>
+  <a id="download-link" class="download-btn" href="#" download>
+    &#8595; Download WAV
+  </a>
+</div>
+
+<script>
+// All API calls go to the same host as the page — no CORS, no port juggling.
+const API = '';
+
+let pollTimer = null;
+let currentJobId = null;
+
+function uuid() {
+  return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
+    (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
+}
+
+function setPhase(id, state, detail) {
+  const icon = document.getElementById('icon-' + id);
+  const det  = document.getElementById('detail-' + id);
+  icon.className = 'phase-icon ' + state;
+  if (state === 'running') icon.innerHTML = '<span class="spinner"></span>';
+  else if (state === 'done')  icon.textContent = '✓';
+  else if (state === 'error') icon.textContent = '✗';
+  if (detail) det.textContent = detail;
+}
+
+function showError(msg) {
+  const el = document.getElementById('error-msg');
+  el.textContent = msg;
+  el.style.display = 'block';
+  document.getElementById('generate-btn').disabled = false;
+  stopPolling();
+}
+
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+async function generate() {
+  const title = document.getElementById('title').value.trim();
+  const text  = document.getElementById('text').value.trim();
+
+  if (!text) { alert('Please paste chapter text first.'); return; }
+
+  document.getElementById('error-msg').style.display = 'none';
+  document.getElementById('generate-btn').disabled = true;
+  document.getElementById('result-card').style.display = 'none';
+  document.getElementById('progress-card').style.display = 'block';
+
+  setPhase('analyzing',   'running', 'Sending to LLM for analysis…');
+  setPhase('synthesizing','pending', 'Waiting for analysis to complete…');
+  setPhase('assembling',  'pending', 'Waiting…');
+
+  const jobId = uuid();
+  currentJobId = jobId;
+
+  try {
+    const res = await fetch(`${API}/api/analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, text, job_id: jobId }),
+    });
+    if (!res.ok) throw new Error(`Analyze webhook error: ${res.status}`);
+  } catch (e) {
+    showError('Failed to reach the pipeline. Is n8n running? ' + e.message);
+    return;
+  }
+
+  pollTimer = setInterval(() => poll(jobId), 4000);
+}
+
+async function poll(jobId) {
+  if (jobId !== currentJobId) return;
+  let status;
+  try {
+    const res = await fetch(`${API}/status/${jobId}`);
+    if (res.status === 404) return; // not written yet — keep waiting
+    if (!res.ok) throw new Error(res.status);
+    status = await res.json();
+  } catch (e) {
+    return; // transient error — keep polling
+  }
+
+  const { phase, status: st, segments, total, output_file, error } = status;
+
+  if (error) {
+    setPhase('analyzing', 'error', error);
+    showError('Pipeline error: ' + error);
+    return;
+  }
+
+  if (phase === 'analyzing') {
+    if (st === 'running') {
+      setPhase('analyzing', 'running', 'LLM is parsing the chapter…');
+    } else if (st === 'done') {
+      const segCount = segments ? segments.length : '?';
+      setPhase('analyzing', 'done', `Found ${segCount} segments`);
+      setPhase('synthesizing', 'running', 'Sending to voice synthesis…');
+      await startSynthesize(jobId, segments);
+    }
+  } else if (phase === 'synthesizing') {
+    if (st === 'running') {
+      const pct = total ? `(${total} segments)` : '';
+      setPhase('synthesizing', 'running', `Generating voices ${pct}`);
+      setPhase('assembling',   'running', 'Will assemble when synthesis is done…');
+    } else if (st === 'done') {
+      setPhase('synthesizing', 'done', `All segments synthesized`);
+      setPhase('assembling',   'running', 'Joining audio clips…');
+    }
+  } else if (phase === 'done') {
+    setPhase('synthesizing', 'done', 'All segments synthesized');
+    setPhase('assembling', 'done', 'Audiobook ready');
+    stopPolling();
+    showResult(output_file);
+  }
+}
+
+async function startSynthesize(jobId, segments) {
+  // Build a sensible voice mapping from available voices
+  const voiceRes  = await fetch(`${API}/voices`).then(r => r.json()).catch(() => []);
+  const voiceMap  = buildVoiceMap(segments, voiceRes);
+
+  try {
+    const res = await fetch(`${API}/api/synthesize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ segments, voice_mapping: voiceMap, job_id: jobId }),
+    });
+    if (!res.ok) throw new Error(`Synthesize webhook error: ${res.status}`);
+  } catch (e) {
+    showError('Failed to start synthesis: ' + e.message);
+  }
+}
+
+function buildVoiceMap(segments, voices) {
+  // Collect unique speaker names from segments
+  const speakers = [...new Set((segments || []).map(s => s.speaker).filter(Boolean))];
+  const map = {};
+
+  // Prefer exact name match (case-insensitive), else cycle through voices
+  speakers.forEach((speaker, i) => {
+    const lower = speaker.toLowerCase();
+    const exact = voices.find(v => v.name.toLowerCase() === lower);
+    if (exact) {
+      map[speaker] = exact.filename;
+    } else if (voices.length > 0) {
+      map[speaker] = voices[i % voices.length].filename;
+    } else {
+      map[speaker] = 'generic_neutral.wav';
+    }
+  });
+
+  return map;
+}
+
+function showResult(filename) {
+  const src = `${API}/audio/${filename}`;
+  document.getElementById('audio-player').src = src;
+  document.getElementById('download-link').href = src;
+  document.getElementById('download-link').download = filename;
+  document.getElementById('result-card').style.display = 'block';
+  document.getElementById('generate-btn').disabled = false;
+}
+</script>
+
+</body>
+</html>

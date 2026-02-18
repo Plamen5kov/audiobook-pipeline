@@ -1,0 +1,265 @@
+{
+  "updatedAt": "2026-02-18T16:09:53.805Z",
+  "createdAt": "2026-02-18T16:09:53.805Z",
+  "id": "ecxR4a4yDizP6Hx0",
+  "name": "audiobook-analyze",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "analyze",
+        "responseMode": "responseNode",
+        "options": {},
+        "httpMethod": "POST"
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "c0d343ae-83ef-4b6b-9647-07105358f77d",
+      "name": "Webhook",
+      "webhookId": "audiobook-analyze"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'analyzing', execution_id: $execution.id }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        208,
+        0
+      ],
+      "id": "f608e485-0757-44d4-b87f-eb1fa5097528",
+      "name": "Respond with execution_id"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('Webhook').first().json.body || {};\nconst title = body.title || 'Untitled Chapter';\nconst text = body.text || '';\nconst job_id = body.job_id || $execution.id;\nreturn [{ json: { title, text, job_id, body: JSON.stringify({ title, text }) } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        0
+      ],
+      "id": "436212a4-8252-4975-91fc-a22bf2c2e4bb",
+      "name": "extract text from webhook"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://text-analyzer:8001/analyze",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $('extract text from webhook').first().json.body }}",
+        "options": {
+          "timeout": 1200000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        608,
+        0
+      ],
+      "id": "4527c6c8-a6ee-4aa7-b916-d2eda4654069",
+      "name": "text-analyzer",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const { job_id } = $input.first().json;\nreturn [{ json: { job_id, status_json: JSON.stringify({ phase: \"analyzing\", status: \"running\", job_id }) } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ],
+      "id": "status-ar-code",
+      "name": "write status (ar)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://file-server:8080/status/{{ $json.job_id }}",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.status_json }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        920,
+        0
+      ],
+      "id": "status-ar-http",
+      "name": "POST status (ar)"
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $input.first().json;\nconst prev = $('extract text from webhook').first().json;\nconst job_id = prev.job_id;\nconst segments = result.segments || [];\nconst title = prev.title;\nreturn [{ json: { job_id, status_json: JSON.stringify({ phase: 'analyzing', status: 'done', job_id, segments, title }) } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        868,
+        0
+      ],
+      "id": "status-ad-code",
+      "name": "write status (ad)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://file-server:8080/status/{{ $json.job_id }}",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.status_json }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1128,
+        0
+      ],
+      "id": "status-ad-http",
+      "name": "POST status (ad)"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Respond with execution_id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond with execution_id": {
+      "main": [
+        [
+          {
+            "node": "extract text from webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "extract text from webhook": {
+      "main": [
+        [
+          {
+            "node": "write status (ar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "write status (ar)": {
+      "main": [
+        [
+          {
+            "node": "POST status (ar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST status (ar)": {
+      "main": [
+        [
+          {
+            "node": "text-analyzer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "text-analyzer": {
+      "main": [
+        [
+          {
+            "node": "write status (ad)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "write status (ad)": {
+      "main": [
+        [
+          {
+            "node": "POST status (ad)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "b37d4f41-6316-4001-aa49-6dd2f87ae552",
+  "activeVersionId": "b37d4f41-6316-4001-aa49-6dd2f87ae552",
+  "versionCounter": 17,
+  "triggerCount": 1,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-02-18T16:09:53.812Z",
+      "createdAt": "2026-02-18T16:09:53.812Z",
+      "role": "workflow:owner",
+      "workflowId": "ecxR4a4yDizP6Hx0",
+      "projectId": "hE0kW0jFozIWZD9c",
+      "project": {
+        "updatedAt": "2026-02-17T14:56:41.317Z",
+        "createdAt": "2026-02-17T14:42:59.241Z",
+        "id": "hE0kW0jFozIWZD9c",
+        "name": "plamen petkov <5kov.p@proton.me>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "21a0cb79-d1a5-4697-a41a-bc103afc89cb"
+      }
+    }
+  ]
+}

@@ -1,0 +1,473 @@
+{
+  "updatedAt": "2026-02-18T16:10:28.671Z",
+  "createdAt": "2026-02-18T16:10:28.127Z",
+  "id": "XP0SGdtIlq23CBwM",
+  "name": "audiobook-synthesize",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "synthesize",
+        "responseMode": "responseNode",
+        "options": {},
+        "httpMethod": "POST"
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "3aec7135-5010-4bcc-8905-dc17ec37f288",
+      "name": "Webhook",
+      "webhookId": "audiobook-synthesize"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: 'synthesizing', execution_id: $execution.id }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        208,
+        0
+      ],
+      "id": "26eeb494-868f-488d-8ead-7e011e521c82",
+      "name": "Respond with execution_id"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $('Webhook').first().json.body || {};\nconst job_id = body.job_id || $execution.id;\nreturn [{ json: { segments: body.segments || [], title: body.title || 'Untitled', job_id } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        0
+      ],
+      "id": "6e41b4fa-ffbb-402f-996f-d45a84cf891e",
+      "name": "extract segments"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://script-adapter:8002/adapt",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('extract segments').first().json) }}",
+        "options": {
+          "timeout": 1200000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        608,
+        0
+      ],
+      "id": "27a998f2-bd0e-4b74-b7f4-26cb60c3c093",
+      "name": "script-adapter",
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "segments",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        800,
+        0
+      ],
+      "id": "597d8ead-0de9-46b3-aa03-3d5ce411b7d6",
+      "name": "split segments"
+    },
+    {
+      "parameters": {
+        "jsCode": "const voiceMapping = $(\"Webhook\").first().json.body.voice_mapping || {};\nreturn $input.all().map(item => {\n  const segment = item.json;\n  const speaker = segment.speaker || \"default\";\n  const voiceFile = voiceMapping[speaker] || \"generic_neutral.wav\";\n  return { json: { ...segment, reference_audio_path: `/voices/${voiceFile}` } };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        0
+      ],
+      "id": "d27532ac-57a2-41f2-ae52-892f728809c9",
+      "name": "apply voice mapping"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://xtts-v2:8003/synthesize",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ segment_id: $json.id, speaker: $json.speaker, text: $json.spoken_text, reference_audio_path: $json.reference_audio_path }) }}",
+        "options": {
+          "timeout": 1200000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1200,
+        0
+      ],
+      "id": "5e8d5009-344e-4651-8378-b284f8f3ad38",
+      "name": "xtts-v2"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "destinationFieldName": "clips",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        1408,
+        0
+      ],
+      "id": "73228f99-8483-4ed8-a986-e406bc008dea",
+      "name": "aggregate clips"
+    },
+    {
+      "parameters": {
+        "jsCode": "const clips = $json.clips.map(item => ({\n  id: item.segment_id,\n  file_path: item.file_path,\n  pause_before_ms: item.pause_before_ms || 0\n}));\nconst ts = Date.now();\nreturn [{ json: { clips, output_filename: `chapter_${ts}.wav` } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        0
+      ],
+      "id": "4326aecd-70ac-48f7-a7a5-7fa36f69a3e7",
+      "name": "prepare assemble request"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://audio-assembly:8005/assemble",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1808,
+        0
+      ],
+      "id": "893b283a-b6bd-4c91-b351-8e7825b73afb",
+      "name": "audio-assembly"
+    },
+    {
+      "parameters": {
+        "jsCode": "const { job_id, segments } = $input.first().json;\nreturn [{ json: { job_id, status_json: JSON.stringify({ phase: 'synthesizing', status: 'running', job_id, total: segments.length }) } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        0
+      ],
+      "id": "status-sr-code",
+      "name": "write status (sr)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://file-server:8080/status/{{ $json.job_id }}",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.status_json }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        920,
+        0
+      ],
+      "id": "status-sr-http",
+      "name": "POST status (sr)"
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $input.first().json;\nconst jobData = $(\"extract segments\").first().json;\nconst job_id = jobData.job_id;\nreturn [{ json: { job_id, status_json: JSON.stringify({ phase: \"synthesizing\", status: \"done\", job_id }) } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2068,
+        0
+      ],
+      "id": "status-sd-code",
+      "name": "write status (sd)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://file-server:8080/status/{{ $json.job_id }}",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.status_json }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2328,
+        0
+      ],
+      "id": "status-sd-http",
+      "name": "POST status (sd)"
+    },
+    {
+      "id": "status-fd-1771449539",
+      "name": "write status (fd)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const result = $input.first().json;\nconst jobData = $(\"extract segments\").first().json;\nconst job_id = jobData.job_id;\nconst assemble = $(\"audio-assembly\").first().json;\nconst output_file = assemble.filename || assemble.output_filename || assemble.output_file || \"\";\nreturn [{ json: { job_id, status_json: JSON.stringify({ phase: \"done\", status: \"done\", job_id, output_file }) } }];"
+      }
+    },
+    {
+      "id": "status-pfd-1771449539",
+      "name": "POST status (fd)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2600,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=http://file-server:8080/status/{{ $json.job_id }}",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.status_json }}",
+        "options": {
+          "timeout": 10000
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Respond with execution_id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond with execution_id": {
+      "main": [
+        [
+          {
+            "node": "extract segments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "extract segments": {
+      "main": [
+        [
+          {
+            "node": "write status (sr)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "script-adapter": {
+      "main": [
+        [
+          {
+            "node": "split segments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "split segments": {
+      "main": [
+        [
+          {
+            "node": "apply voice mapping",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "apply voice mapping": {
+      "main": [
+        [
+          {
+            "node": "xtts-v2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "xtts-v2": {
+      "main": [
+        [
+          {
+            "node": "aggregate clips",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "aggregate clips": {
+      "main": [
+        [
+          {
+            "node": "prepare assemble request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "prepare assemble request": {
+      "main": [
+        [
+          {
+            "node": "audio-assembly",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "write status (sr)": {
+      "main": [
+        [
+          {
+            "node": "POST status (sr)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST status (sr)": {
+      "main": [
+        [
+          {
+            "node": "script-adapter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "audio-assembly": {
+      "main": [
+        [
+          {
+            "node": "write status (sd)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "write status (sd)": {
+      "main": [
+        [
+          {
+            "node": "POST status (sd)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST status (sd)": {
+      "main": [
+        [
+          {
+            "node": "write status (fd)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "write status (fd)": {
+      "main": [
+        [
+          {
+            "node": "POST status (fd)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "7179dbe4-fadd-451b-bfa4-f7701ecf1ddd",
+  "activeVersionId": "7179dbe4-fadd-451b-bfa4-f7701ecf1ddd",
+  "versionCounter": 19,
+  "triggerCount": 1,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-02-18T16:10:28.132Z",
+      "createdAt": "2026-02-18T16:10:28.132Z",
+      "role": "workflow:owner",
+      "workflowId": "XP0SGdtIlq23CBwM",
+      "projectId": "hE0kW0jFozIWZD9c",
+      "project": {
+        "updatedAt": "2026-02-17T14:56:41.317Z",
+        "createdAt": "2026-02-17T14:42:59.241Z",
+        "id": "hE0kW0jFozIWZD9c",
+        "name": "plamen petkov <5kov.p@proton.me>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "21a0cb79-d1a5-4697-a41a-bc103afc89cb"
+      }
+    }
+  ]
+}
