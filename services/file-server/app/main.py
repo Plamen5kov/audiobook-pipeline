@@ -55,6 +55,17 @@ async def upload_voice(file: UploadFile = File(...)):
     return {"name": safe_name, "filename": f"{safe_name}.wav"}
 
 
+@app.get("/voices/{filename}")
+async def get_voice(filename: str):
+    """Serve a reference voice file (for in-browser preview)."""
+    if ".." in filename or "/" in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = os.path.join(VOICES_DIR, filename)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail=f"Voice file not found: {filename}")
+    return FileResponse(path, media_type="audio/wav", filename=filename)
+
+
 @app.get("/audio/{filename}")
 async def get_audio(filename: str):
     """Serve a generated audiobook file from the output directory."""
