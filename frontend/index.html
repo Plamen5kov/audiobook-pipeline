@@ -283,6 +283,7 @@
       margin-top: 12px;
     }
   </style>
+  <script src="config.js"></script>
 </head>
 <body>
 
@@ -356,7 +357,7 @@
 </div>
 
 <script>
-const API = '';
+const API = (window.PIPELINE_API || '').replace(/\/$/, '');
 
 let pollTimer   = null;
 let currentJobId = null;
