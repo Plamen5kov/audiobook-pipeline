@@ -95,7 +95,6 @@ services:
     volumes:
       - ./voices:/voices
       - ./output:/output
-      - ./frontend:/static:ro
     restart: unless-stopped
 
 volumes:

@@ -1,4 +1,7 @@
-// All paths are relative — the host nginx routes them to the NestJS backend.
+// Base URL is configured at build time via VITE_BACKEND_URL.
+// For local dev: http://localhost:3001
+// For production: set VITE_BACKEND_URL to your public backend domain and rebuild.
+const BASE = (import.meta.env.VITE_BACKEND_URL as string | undefined ?? '').replace(/\/$/, '');
 
 export interface Voice {
   name: string;
@@ -24,13 +27,13 @@ export interface StatusResponse {
 }
 
 export async function fetchVoices(): Promise<Voice[]> {
-  const res = await fetch('/voices');
+  const res = await fetch(`${BASE}/voices`);
   if (!res.ok) throw new Error(`Failed to fetch voices: ${res.status}`);
   return res.json();
 }
 
 export async function analyzeText(title: string, text: string, jobId: string): Promise<void> {
-  const res = await fetch('/api/analyze', {
+  const res = await fetch(`${BASE}/api/analyze`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title, text, job_id: jobId }),
@@ -39,7 +42,7 @@ export async function analyzeText(title: string, text: string, jobId: string): P
 }
 
 export async function pollStatus(jobId: string): Promise<StatusResponse | null> {
-  const res = await fetch(`/status/${jobId}`);
+  const res = await fetch(`${BASE}/status/${jobId}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Status error: ${res.status}`);
   return res.json();
@@ -50,7 +53,7 @@ export async function startSynthesis(
   voiceMapping: Record<string, string>,
   jobId: string,
 ): Promise<void> {
-  const res = await fetch('/api/synthesize', {
+  const res = await fetch(`${BASE}/api/synthesize`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ segments, voice_mapping: voiceMapping, job_id: jobId }),
@@ -59,9 +62,9 @@ export async function startSynthesis(
 }
 
 export function voiceUrl(filename: string): string {
-  return `/voices/${filename}`;
+  return `${BASE}/voices/${filename}`;
 }
 
 export function audioUrl(filename: string): string {
-  return `/audio/${filename}`;
+  return `${BASE}/audio/${filename}`;
 }

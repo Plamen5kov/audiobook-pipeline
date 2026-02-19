@@ -133,23 +133,34 @@ export default function App() {
   }, [stopPolling, startPoll]);
 
   const handleGenerate = useCallback(async (voiceMapping: Record<string, string>) => {
+    stopPolling();
+    setError('');
+    setOutputFile('');
     setPhase('synthesizing');
-    updatePhase('synthesizing', 'running', 'Sending to voice synthesis…');
+    setPhases((prev: Phases) => ({
+      ...prev,
+      synthesizing: { state: 'running', detail: 'Sending to voice synthesis…' },
+      assembling:   { state: 'pending', detail: 'Waiting…' },
+    }));
+
+    // Use a fresh job ID each synthesis so polling never reads a stale status file
+    const synthJobId = uuid();
+    jobIdRef.current = synthJobId;
 
     try {
-      await startSynthesis(segments, voiceMapping, jobIdRef.current);
+      await startSynthesis(segments, voiceMapping, synthJobId);
     } catch (e: unknown) {
       setError('Failed to start synthesis: ' + (e instanceof Error ? e.message : String(e)));
       setPhase('voice-cast');
       return;
     }
 
-    startPoll(jobIdRef.current);
-  }, [segments, updatePhase, startPoll]);
+    startPoll(synthJobId);
+  }, [segments, stopPolling, startPoll]);
 
-  const showProgress = phase !== 'idle';
-  const showVoiceCast = phase === 'voice-cast';
-  const showResult = phase === 'done';
+  const showProgress  = phase !== 'idle';
+  const showVoiceCast = segments.length > 0 && phase !== 'idle' && phase !== 'analyzing';
+  const showResult    = phase === 'done';
 
   return (
     <>
@@ -177,6 +188,7 @@ export default function App() {
           segments={segments}
           voices={voices}
           onGenerate={handleGenerate}
+          disabled={phase === 'synthesizing'}
         />
       )}
 

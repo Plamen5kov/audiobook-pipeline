@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { StreamableFile } from '@nestjs/common';
 import axios, { AxiosError } from 'axios';
 import FormData from 'form-data';
+import { Readable } from 'stream';
 
 @Injectable()
 export class ProxyService {
@@ -35,7 +36,7 @@ export class ProxyService {
         responseType: 'stream',
         timeout: 0,
       });
-      return new StreamableFile(res.data as NodeJS.ReadableStream, {
+      return new StreamableFile(res.data as Readable, {
         type: 'audio/wav',
       });
     } catch (err) {

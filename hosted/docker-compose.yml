@@ -4,10 +4,16 @@ services:
     ports:
       - "${BACKEND_PORT:-3000}:3000"
     env_file: .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://localhost:3001}
     ports:
       - "${FRONTEND_PORT:-4000}:80"
     restart: unless-stopped
+

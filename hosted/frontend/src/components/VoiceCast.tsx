@@ -5,6 +5,7 @@ interface Props {
   segments: Segment[];
   voices: Voice[];
   onGenerate: (voiceMapping: Record<string, string>) => void;
+  disabled?: boolean;
 }
 
 function pickDefault(speaker: string, index: number, voices: Voice[]): string {
@@ -14,7 +15,7 @@ function pickDefault(speaker: string, index: number, voices: Voice[]): string {
   return exact ? exact.filename : voices[index % voices.length].filename;
 }
 
-export function VoiceCast({ segments, voices, onGenerate }: Props) {
+export function VoiceCast({ segments, voices, onGenerate, disabled = false }: Props) {
   const speakers = [...new Set(segments.map(s => s.speaker).filter(Boolean))];
   const displayVoices = voices.length > 0 ? voices : [{ name: 'generic_neutral', filename: 'generic_neutral.wav' }];
 
@@ -82,8 +83,8 @@ export function VoiceCast({ segments, voices, onGenerate }: Props) {
       ))}
 
       <div className="cast-actions">
-        <button className="btn-primary" onClick={handleGenerate}>
-          Generate Audiobook
+        <button className="btn-primary" onClick={handleGenerate} disabled={disabled}>
+          {disabled ? 'Synthesizing…' : 'Generate Audiobook'}
         </button>
       </div>
     </div>
