@@ -1,6 +1,22 @@
 # Voice Cast Configuration
 # Maps characters to TTS engines and voice profiles.
 # Characters not listed here will use the "default" profile.
+#
+# Fields:
+#   tts_service:    Docker service name — used as the "engine" value in /synthesize requests.
+#                   Must match a key in tts-router's TTS_BACKENDS env var.
+#                   Options: xtts-v2, qwen3-tts
+#   tts_port:       Port the service listens on (used by tts-router's backend map).
+#   reference_audio: Path to WAV reference clip (xtts-v2 only; ignored by other engines).
+#   speed:          Playback speed hint (xtts-v2 only).
+#   style_notes:    Human-readable notes (not consumed by any service).
+#   qwen_speaker:   One of Qwen3-TTS's 9 predefined voices (qwen3-tts only).
+#                   Options: Vivian, Serena, Uncle_Fu, Dylan, Eric, Ryan, Aiden, Ono_Anna, Sohee
+#   qwen_instruct:  Baseline style instruction for Qwen (qwen3-tts only).
+#                   The service appends an emotion phrase at synthesis time.
+#
+# To switch a character to a different engine, change tts_service (and tts_port).
+# Example: tts_service: qwen3-tts / tts_port: 8007
 
 voices:
   narrator:
@@ -9,6 +25,8 @@ voices:
     reference_audio: /voices/narrator.wav
     speed: 0.95
     style_notes: calm, measured, storytelling tone
+    qwen_speaker: Serena
+    qwen_instruct: calm and measured storytelling voice
 
   Elena:
     tts_service: xtts-v2
@@ -16,6 +34,8 @@ voices:
     reference_audio: /voices/elena.wav
     speed: 1.0
     style_notes: young, curious, energetic
+    qwen_speaker: Vivian
+    qwen_instruct: young energetic female voice
 
   Marcus:
     tts_service: xtts-v2
@@ -23,6 +43,8 @@ voices:
     reference_audio: /voices/marcus.wav
     speed: 1.0
     style_notes: cautious, guarded
+    qwen_speaker: Dylan
+    qwen_instruct: cautious and guarded male voice
 
   default:
     tts_service: xtts-v2
@@ -30,3 +52,5 @@ voices:
     reference_audio: /voices/generic_neutral.wav
     speed: 1.0
     style_notes: neutral
+    qwen_speaker: Ryan
+    qwen_instruct: neutral clear voice

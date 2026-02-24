@@ -28,14 +28,21 @@ Turn a book chapter (plain text) into a full audiobook with **distinct voices pe
                          │     :5678            │
                          └──────────┬───────────┘
                                     │ HTTP calls
-        ┌───────────┬───────────┬───┴────┬──────────┬───────────┐
-        ▼           ▼           ▼        ▼          ▼           ▼
-   ┌─────────┐ ┌─────────┐ ┌──────┐ ┌──────┐ ┌─────────┐ ┌─────────┐
-   │  Text   │ │ Script  │ │ TTS  │ │ TTS  │ │ Audio   │ │   QA    │
-   │Analyzer │ │Adapter  │ │  #1  │ │  #2  │ │Assembly │ │Verifier │
-   │ :8001   │ │ :8002   │ │:8003 │ │:8004 │ │ :8005   │ │ :8006   │
-   └─────────┘ └─────────┘ └──────┘ └──────┘ └─────────┘ └─────────┘
-      LLM         LLM        GPU      GPU      ffmpeg     Whisper
+        ┌───────────┬───────────┬───┴──────────┬───────────┐
+        ▼           ▼           ▼              ▼           ▼
+   ┌─────────┐ ┌─────────┐ ┌──────────┐ ┌─────────┐ ┌─────────┐
+   │  Text   │ │ Script  │ │TTS Router│ │ Audio   │ │   QA    │
+   │Analyzer │ │Adapter  │ │  :8010   │ │Assembly │ │Verifier │
+   │ :8001   │ │ :8002   │ └────┬─────┘ │ :8005   │ │ :8006   │
+   └─────────┘ └─────────┘      │       └─────────┘ └─────────┘
+      LLM         LLM      ┌────┴────┐    ffmpeg     Whisper
+                            ▼        ▼
+                       ┌──────┐ ┌──────────┐  ┌─────────────┐
+                       │XTTS  │ │ Qwen3-   │  │ <future>    │
+                       │  v2  │ │   TTS    │  │  engine     │
+                       │:8003 │ │  :8007   │  │  :xxxx      │
+                       └──────┘ └──────────┘  └─────────────┘
+                         GPU       GPU
 ```
 
 Each box is a **Docker container** exposing a **FastAPI HTTP API**. n8n orchestrates the flow, routes segments to the correct TTS engine, and provides the visual UI for experimenting with different configurations.
@@ -119,36 +126,52 @@ Each box is a **Docker container** exposing a **FastAPI HTTP API**. n8n orchestr
 
 ### Stage 3: Voice Casting (Configuration)
 
-**Not an AI stage** — this is a config file that maps characters to TTS engines and voice profiles.
+**Not an AI stage** — `voice-cast.yaml` maps characters to TTS engines and voice profiles.
+The `tts_service` field is the live routing key: the n8n `apply voice mapping` node reads it
+at synthesis time and sets the `engine` field on each segment, which the TTS Router uses to
+pick the correct backend.
 
 ```yaml
 voices:
   narrator:
-    tts_service: xtts_v2        # which TTS container to call
-    reference_audio: ./voices/my_voice.wav
+    tts_service: xtts-v2        # engine value forwarded to tts-router
+    tts_port: 8003
+    reference_audio: /voices/narrator.wav
     speed: 0.95
     style_notes: calm, measured, storytelling tone
+    qwen_speaker: Serena        # Qwen3-TTS predefined voice (if switching to qwen3-tts)
+    qwen_instruct: calm and measured storytelling voice
 
-  elena:
-    tts_service: xtts_v2        # same or different engine
-    reference_audio: ./voices/elena_ref.wav
+  Elena:
+    tts_service: xtts-v2
+    tts_port: 8003
+    reference_audio: /voices/elena.wav
     speed: 1.0
-    style_notes: young, energetic
+    style_notes: young, curious, energetic
+    qwen_speaker: Vivian
+    qwen_instruct: young energetic female voice
 
   default:
-    tts_service: xtts_v2
-    reference_audio: ./voices/generic_neutral.wav
+    tts_service: xtts-v2
+    tts_port: 8003
+    reference_audio: /voices/generic_neutral.wav
     speed: 1.0
     style_notes: neutral
+    qwen_speaker: Ryan
+    qwen_instruct: neutral clear voice
 ```
 
 - Characters not in the config fall back to `default`
-- n8n reads this config and routes segments to the correct TTS service
-- Changing a character's voice = edit YAML + re-run. No code changes.
+- **To switch a character to a different TTS engine:** change `tts_service` (and `tts_port`). That's it — no code changes anywhere.
+- Each TTS engine reads its own fields (`reference_audio` for xtts-v2, `qwen_speaker`/`qwen_instruct` for qwen3-tts) and ignores the rest.
 
 ### Stage 4: TTS Synthesis
 
 **Purpose:** Generate audio for each segment.
+
+All synthesis requests go through the **TTS Router** (`:8010`), which forwards to the correct
+backend based on the `engine` field in the request. n8n always calls the router — it never
+calls a TTS engine directly.
 
 **Shared API contract** (all TTS services implement this):
 
@@ -156,22 +179,41 @@ voices:
 POST /synthesize
 {
   "text": "Is anyone there?",
-  "speaker_id": "elena",
-  "reference_audio_path": "/voices/elena_ref.wav",
+  "speaker": "Elena",
+  "engine": "xtts-v2",            ← routing key; which backend to use
+  "reference_audio_path": "/voices/elena.wav",  ← xtts-v2 only; ignored by others
   "emotion": "fearful",
   "intensity": 0.7,
   "speed": 1.0
 }
-→ returns: audio/wav file
+→ returns: JSON { segment_id, speaker, file_path, filename }
 ```
 
-**MVP TTS engine: XTTS v2 (Coqui)**
-- Voice cloning from short reference clips (~6-10 seconds)
-- Good English quality
-- Supports emotion through reference audio conditioning
-- Battle-tested, large community
+**TTS Router** (`:8010`) — routes by `engine` field
+- Backend map configured via `TTS_BACKENDS` env var (JSON string in docker-compose)
+- Falls back to `DEFAULT_ENGINE` if the requested engine is unknown
+- Adding a new engine: new Docker service + one entry in `TTS_BACKENDS`. Zero code changes.
 
-**Future TTS engines to add:**
+**Available TTS engines:**
+
+| Engine | Port | Mechanism | Voice control |
+|---|---|---|---|
+| `xtts-v2` | 8003 | Voice cloning from reference WAV | `reference_audio_path` per character |
+| `qwen3-tts` | 8007 | 9 predefined voices + instruction control | `qwen_speaker` + `qwen_instruct` from voice-cast.yaml; `emotion` field mapped to natural-language instruct |
+
+**Qwen3-TTS predefined voices:** Vivian, Serena, Uncle_Fu, Dylan, Eric, Ryan, Aiden, Ono_Anna, Sohee
+
+**Emotion → instruct mapping** (qwen3-tts):
+- `neutral` → no instruction (model default)
+- `happy` → "speak with warmth and cheerfulness"
+- `sad` → "speak with a tone of sadness and melancholy"
+- `angry` → "speak very angrily with sharp emphasis"
+- `fearful` → "speak with a trembling, nervous, fearful tone"
+- `excited` → "speak with high energy and excitement"
+- `tense` → "speak with urgency and tension in your voice"
+- `contemplative` → "speak slowly and thoughtfully, as if pondering deeply"
+
+**Future TTS engines to evaluate:**
 - **F5-TTS** — newer, very natural, good zero-shot cloning
 - **Bark** — best emotion control (laughing, sighing, hesitation)
 - **Kokoro** — lightweight and fast for bulk generation
@@ -222,12 +264,15 @@ POST /synthesize
 | Service          | Port  | GPU | Description                         |
 |------------------|-------|-----|-------------------------------------|
 | n8n              | 5678  | No  | Pipeline orchestrator + UI          |
-| ollama           | 11434 | Yes | Shared LLM backend                  |
+| ollama           | 11435 | Yes | Shared LLM backend (host port 11435 → internal 11434) |
 | text-analyzer    | 8001  | No  | FastAPI, calls Ollama               |
 | script-adapter   | 8002  | No  | FastAPI, calls Ollama               |
-| xtts-v2          | 8003  | Yes | FastAPI + XTTS v2 model             |
+| xtts-v2          | 8003  | Yes | FastAPI + XTTS v2 (voice cloning)   |
+| qwen3-tts        | 8007  | Yes | FastAPI + Qwen3-TTS-12Hz-1.7B (predefined voices + instruct) |
+| tts-router       | 8010  | No  | HTTP proxy — routes /synthesize to correct TTS backend |
 | audio-assembly   | 8005  | No  | FastAPI + ffmpeg/pydub              |
-| qa-verifier      | 8006  | Yes | FastAPI + Whisper                   |
+| qa-verifier      | 8006  | Yes | FastAPI + Whisper (Phase 2)         |
+| file-server      | 8080  | No  | Serves voices, outputs; proxies n8n webhooks |
 
 ### Shared Volumes
 
@@ -269,11 +314,13 @@ POST /synthesize
 - Auto-retry failed segments
 - Better error handling across services
 
-### Phase 3 — Multi-TTS + Voice Cloning
-- Add F5-TTS and/or Bark as alternative TTS engines
-- n8n routing: different TTS per character role
+### Phase 3 — Multi-TTS + Voice Cloning ✅ (in progress)
+- ✅ TTS Router added — single entry point, routes by `engine` field in request
+- ✅ Qwen3-TTS-12Hz-1.7B added — 9 predefined voices, emotion via natural-language instruct
+- ✅ Per-character engine assignment via `tts_service` in voice-cast.yaml
+- ✅ Adding future engines requires zero code changes (new service + TTS_BACKENDS env entry)
 - Clone your voice for the narrator
-- Experiment with emotion-conditioned generation
+- Evaluate F5-TTS, Bark, Kokoro, Piper
 
 ### Phase 4 — Polish + Scale
 - Web UI for voice casting (character → voice assignment with audio previews)
@@ -301,9 +348,13 @@ POST /synthesize
 | 2026-02-17 | English only for MVP                    | Reduces complexity, most TTS models handle English best      |
 | 2026-02-17 | One TTS for MVP, multi-TTS later        | Get end-to-end working first, then expand                    |
 | 2026-02-17 | Shared Ollama instance for LLM stages   | Both text-analyzer and script-adapter use the same model type|
+| 2026-02-24 | TTS Router as single n8n entry point    | n8n calls tts-router:8010; router dispatches by `engine` field; adding future engines = zero code changes |
+| 2026-02-24 | `engine` field in SynthesizeRequest     | Explicit routing key preferred over implicit speaker→YAML lookup in router; caller (n8n) owns the routing decision |
+| 2026-02-24 | Qwen3-TTS as second TTS engine          | Predefined voices + instruction-based emotion control; good complement to XTTS v2's voice-cloning approach |
 
 ---
 
 ## Changelog
 
 - **2026-02-17:** Initial architecture document created. Defined 6-stage pipeline, MVP scope, and phased roadmap.
+- **2026-02-24:** Added TTS Router (`tts-router:8010`) and Qwen3-TTS (`qwen3-tts:8007`). Introduced `engine` field in shared `SynthesizeRequest` contract. voice-cast.yaml `tts_service` field now drives engine selection per character via n8n code node. Updated pipeline diagram, services table, Phase 3 status.

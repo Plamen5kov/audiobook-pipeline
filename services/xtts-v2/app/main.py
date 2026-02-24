@@ -54,6 +54,7 @@ class SynthesizeRequest(BaseModel):
     text: str
     segment_id: int = 0                              # used in filename to preserve order
     speaker: str = "default"
+    engine: str = "xtts-v2"                          # accepted for contract parity; not used here
     reference_audio_path: str = ""                   # optional override; resolved from VOICE_CAST if empty
     emotion: str = "neutral"
     intensity: float = 0.5

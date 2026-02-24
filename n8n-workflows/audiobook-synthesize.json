@@ -90,7 +90,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const voiceMapping = $(\"Webhook\").first().json.body.voice_mapping || {};\nreturn $input.all().map(item => {\n  const segment = item.json;\n  const speaker = segment.speaker || \"default\";\n  const voiceFile = voiceMapping[speaker] || \"generic_neutral.wav\";\n  return { json: { ...segment, reference_audio_path: `/voices/${voiceFile}` } };\n});"
+        "jsCode": "const fs = require('fs');\nconst body = $(\"Webhook\").first().json.body || {};\nconst voiceMapping = body.voice_mapping || {};\nconst engineMapping = body.engine_mapping || {};\n\n// Read voice-cast.yaml as fallback for engine per speaker\nlet voiceCast = {};\ntry {\n  const raw = fs.readFileSync('/voice-cast.yaml', 'utf8');\n  const blocks = raw.split(/^  (\\w+):$/m);\n  for (let i = 1; i < blocks.length; i += 2) {\n    const name = blocks[i];\n    const blk = blocks[i + 1] || '';\n    const m = blk.match(/tts_service:\\s*(\\S+)/);\n    if (m) voiceCast[name] = { tts_service: m[1] };\n  }\n} catch(e) { /* fallback: all xtts-v2 */ }\n\nreturn $input.all().map(item => {\n  const segment = item.json;\n  const speaker = segment.speaker || 'default';\n  // Engine: prefer FE-specified, fall back to voice-cast.yaml, then xtts-v2\n  const castEntry = voiceCast[speaker] || voiceCast['default'] || {};\n  const engine = engineMapping[speaker] || castEntry.tts_service || 'xtts-v2';\n  // voiceMapping value meaning depends on engine:\n  //   xtts-v2   -> WAV filename  -> reference_audio_path\n  //   qwen3-tts -> Qwen speaker name -> qwen_speaker\n  const voiceValue = voiceMapping[speaker] || '';\n  const referenceAudioPath = engine !== 'qwen3-tts' ? `/voices/${voiceValue || 'generic_neutral.wav'}` : '';\n  const qwenSpeaker = engine === 'qwen3-tts' ? (voiceValue || '') : '';\n  return { json: { ...segment, reference_audio_path: referenceAudioPath, engine, qwen_speaker: qwenSpeaker } };\n});"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -104,11 +104,11 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://xtts-v2:8003/synthesize",
+        "url": "http://tts-router:8010/synthesize",
         "sendBody": true,
         "contentType": "raw",
         "rawContentType": "application/json",
-        "body": "={{ JSON.stringify({ segment_id: $json.id, speaker: $json.speaker, text: $json.spoken_text, reference_audio_path: $json.reference_audio_path }) }}",
+        "body": "={{ JSON.stringify({ segment_id: $json.id, speaker: $json.speaker, text: $json.spoken_text, reference_audio_path: $json.reference_audio_path, engine: $json.engine || \"xtts-v2\", qwen_speaker: $json.qwen_speaker || \"\", emotion: $json.emotion || \"neutral\", intensity: $json.intensity || 0.5 }) }}",
         "options": {
           "timeout": 1200000
         }
@@ -120,7 +120,7 @@
         0
       ],
       "id": "5e8d5009-344e-4651-8378-b284f8f3ad38",
-      "name": "xtts-v2"
+      "name": "tts-router"
     },
     {
       "parameters": {
@@ -331,14 +331,14 @@
       "main": [
         [
           {
-            "node": "xtts-v2",
+            "node": "tts-router",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "xtts-v2": {
+    "tts-router": {
       "main": [
         [
           {

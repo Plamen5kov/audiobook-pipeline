@@ -1,0 +1,8 @@
+fastapi==0.115.0
+uvicorn==0.30.0
+pydantic==2.9.0
+PyYAML==6.0.2
+soundfile==0.12.1
+numpy==1.26.4
+qwen-tts
+# torch and torchaudio are installed separately in the Dockerfile with the CUDA index

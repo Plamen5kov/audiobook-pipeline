@@ -14,7 +14,7 @@ services:
       - N8N_SECURE_COOKIE=false
       - N8N_ALLOW_EXEC=true
       - N8N_RESTRICT_FILE_ACCESS_TO=/input;/output;/data
-      - N8N_API_KEY=changeme-secret-key
+      - N8N_API_KEY=${N8N_API_KEY}
     restart: unless-stopped
 
   ollama:
@@ -79,6 +79,38 @@ services:
               capabilities: [gpu]
     restart: unless-stopped
 
+  tts-router:
+    build: ./services/tts-router
+    ports:
+      - "8010:8010"
+    volumes:
+      - ./voice-cast.yaml:/voice-cast.yaml:ro
+    environment:
+      - TTS_BACKENDS={"xtts-v2":"http://xtts-v2:8003","qwen3-tts":"http://qwen3-tts:8007"}
+      - DEFAULT_ENGINE=xtts-v2
+    restart: unless-stopped
+
+  qwen3-tts:
+    build: ./services/qwen3-tts
+    ports:
+      - "8007:8007"
+    volumes:
+      - ./data/intermediate:/data/intermediate
+      - ./voice-cast.yaml:/voice-cast.yaml:ro
+      - qwen3-models:/root/.cache/huggingface
+    ipc: host
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
   audio-assembly:
     build: ./services/audio-assembly
     ports:
@@ -101,3 +133,4 @@ volumes:
   root_ollama:
     external: true
   xtts-models:
+  qwen3-models:
