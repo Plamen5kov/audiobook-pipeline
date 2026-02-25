@@ -9,7 +9,7 @@ type Engine = 'xtts-v2' | 'qwen3-tts';
 interface Props {
   segments: Segment[];
   voices: Voice[];
-  onGenerate: (voiceMapping: Record<string, string>, engineMapping: Record<string, string>) => void;
+  onGenerate: (voiceMapping: Record<string, string>, engineMapping: Record<string, string>, skipScriptAdapter: boolean) => void;
   disabled?: boolean;
 }
 
@@ -39,6 +39,7 @@ export function VoiceCast({ segments, voices, onGenerate, disabled = false }: Pr
   });
 
   // playing = WAV filename currently previewing (xtts-v2 only)
+  const [skipAdapter, setSkipAdapter] = useState(false);
   const [playing, setPlaying] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(new Audio());
 
@@ -70,7 +71,7 @@ export function VoiceCast({ segments, voices, onGenerate, disabled = false }: Pr
 
   function handleGenerate() {
     audioRef.current.pause();
-    onGenerate(selected, engines);
+    onGenerate(selected, engines, skipAdapter);
   }
 
   return (
@@ -145,6 +146,18 @@ export function VoiceCast({ segments, voices, onGenerate, disabled = false }: Pr
       })}
 
       <div className="cast-actions">
+        <label className="toggle-label">
+          <span className="toggle-text">Script rewriting</span>
+          <span className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={!skipAdapter}
+              onChange={e => setSkipAdapter(!e.target.checked)}
+              disabled={disabled}
+            />
+            <span className="toggle-slider" />
+          </span>
+        </label>
         <button className="btn-primary" onClick={handleGenerate} disabled={disabled}>
           {disabled ? 'Synthesizing…' : 'Generate Audiobook'}
         </button>

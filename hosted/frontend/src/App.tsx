@@ -143,6 +143,7 @@ export default function App() {
   const handleGenerate = useCallback(async (
     voiceMapping: Record<string, string>,
     engineMapping: Record<string, string>,
+    skipScriptAdapter: boolean,
   ) => {
     stopPolling();
     setError('');
@@ -161,7 +162,7 @@ export default function App() {
     setNodes(undefined);
 
     try {
-      await startSynthesis(segments, voiceMapping, engineMapping, synthJobId);
+      await startSynthesis(segments, voiceMapping, engineMapping, synthJobId, skipScriptAdapter);
     } catch (e: unknown) {
       setError('Failed to start synthesis: ' + (e instanceof Error ? e.message : String(e)));
       setPhase('voice-cast');

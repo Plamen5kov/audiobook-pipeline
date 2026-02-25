@@ -54,17 +54,10 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "http://script-adapter:8002/adapt",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($('extract segments').first().json) }}",
-        "options": {
-          "timeout": 1200000
-        }
+        "jsCode": "const body = $('Webhook').first().json.body || {};\nconst data = $('extract segments').first().json;\nconst skip = body.skip_script_adapter === true;\n\nif (skip) {\n  const segments = (data.segments || []).map(s => ({ ...s, spoken_text: s.original_text }));\n  return [{ json: { segments, title: data.title, job_id: data.job_id } }];\n}\n\nconst res = await $helpers.httpRequest({\n  method: 'POST',\n  url: 'http://script-adapter:8002/adapt',\n  headers: { 'Content-Type': 'application/json' },\n  body: JSON.stringify({ segments: data.segments, title: data.title }),\n  timeout: 1200000,\n});\nreturn [{ json: res }];"
       },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.4,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         608,
         0

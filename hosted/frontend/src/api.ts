@@ -75,11 +75,18 @@ export async function startSynthesis(
   voiceMapping: Record<string, string>,
   engineMapping: Record<string, string>,
   jobId: string,
+  skipScriptAdapter: boolean,
 ): Promise<void> {
   const res = await fetch(`${BASE}/api/synthesize`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ segments, voice_mapping: voiceMapping, engine_mapping: engineMapping, job_id: jobId }),
+    body: JSON.stringify({
+      segments,
+      voice_mapping: voiceMapping,
+      engine_mapping: engineMapping,
+      job_id: jobId,
+      skip_script_adapter: skipScriptAdapter,
+    }),
   });
   if (!res.ok) throw new Error(`Synthesize error: ${res.status}`);
 }
