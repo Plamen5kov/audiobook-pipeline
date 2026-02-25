@@ -196,7 +196,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const jobData = $('extract segments').first().json;\nconst job_id = jobData.job_id;\nconst total = jobData.segments.length;\nreturn [{ json: { job_id, status_json: JSON.stringify({ phase: \"synthesizing\", status: \"done\", job_id, nodes: { \"text-analyzer\": { status: \"done\" }, \"script-adapter\": { status: \"done\" }, \"tts-router\": { status: \"done\", total }, \"audio-assembly\": { status: \"running\", started: Math.floor(Date.now() / 1000) } } }) } }];"
+        "jsCode": "const jobData = $('extract segments').first().json;\nconst job_id = jobData.job_id;\nconst total = jobData.segments.length;\nconst sr_started = $('write script done').first().json.sr_started;\nconst tts_started = $('write script done').first().json.tts_started;\nconst aa_started = Math.floor(Date.now() / 1000);\nreturn [{ json: { job_id, sr_started, tts_started, aa_started, status_json: JSON.stringify({ phase: \"synthesizing\", status: \"done\", job_id, nodes: { \"text-analyzer\": { status: \"done\" }, \"script-adapter\": { status: \"done\", started: sr_started, finished: tts_started }, \"tts-router\": { status: \"done\", total, started: tts_started, finished: aa_started }, \"audio-assembly\": { status: \"running\", started: aa_started } } }) } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -238,7 +238,7 @@
         300
       ],
       "parameters": {
-        "jsCode": "const jobData = $(\"extract segments\").first().json;\nconst job_id = jobData.job_id;\nconst assemble = $(\"audio-assembly\").first().json;\nconst output_file = assemble.filename || assemble.output_filename || assemble.output_file || \"\";\nreturn [{ json: { job_id, status_json: JSON.stringify({ phase: \"done\", status: \"done\", job_id, output_file, nodes: { \"text-analyzer\": { status: \"done\" }, \"script-adapter\": { status: \"done\" }, \"tts-router\": { status: \"done\" }, \"audio-assembly\": { status: \"done\", finished: Math.floor(Date.now() / 1000) } } }) } }];"
+        "jsCode": "const jobData = $(\"extract segments\").first().json;\nconst job_id = jobData.job_id;\nconst assemble = $(\"audio-assembly\").first().json;\nconst output_file = assemble.filename || assemble.output_filename || assemble.output_file || \"\";\nconst sr_started = $('write script done').first().json.sr_started;\nconst tts_started = $('write script done').first().json.tts_started;\nconst aa_started = $('write status (sd)').first().json.aa_started;\nconst aa_finished = Math.floor(Date.now() / 1000);\nreturn [{ json: { job_id, status_json: JSON.stringify({ phase: \"done\", status: \"done\", job_id, output_file, nodes: { \"text-analyzer\": { status: \"done\" }, \"script-adapter\": { status: \"done\", started: sr_started, finished: tts_started }, \"tts-router\": { status: \"done\", started: tts_started, finished: aa_started }, \"audio-assembly\": { status: \"done\", started: aa_started, finished: aa_finished } } }) } }];"
       }
     },
     {
@@ -272,7 +272,7 @@
         200
       ],
       "parameters": {
-        "jsCode": "const data = $('extract segments').first().json;\nconst job_id = data.job_id;\nconst total = data.segments.length;\nconst tts_started = Math.floor(Date.now() / 1000);\nreturn [{ json: { job_id, total, tts_started, status_json: JSON.stringify({ phase: 'synthesizing', status: 'running', job_id, total, nodes: { \"text-analyzer\": { status: \"done\" }, \"script-adapter\": { status: \"done\", finished: tts_started }, \"tts-router\": { status: \"running\", started: tts_started, completed: 0, total }, \"audio-assembly\": { status: \"pending\" } } }) } }];"
+        "jsCode": "const data = $('extract segments').first().json;\nconst job_id = data.job_id;\nconst total = data.segments.length;\nconst sr_started = $('write status (sr)').first().json.sr_started;\nconst tts_started = Math.floor(Date.now() / 1000);\nreturn [{ json: { job_id, total, sr_started, tts_started, status_json: JSON.stringify({ phase: 'synthesizing', status: 'running', job_id, total, nodes: { \"text-analyzer\": { status: \"done\" }, \"script-adapter\": { status: \"done\", started: sr_started, finished: tts_started }, \"tts-router\": { status: \"running\", started: tts_started, completed: 0, total }, \"audio-assembly\": { status: \"pending\" } } }) } }];"
       }
     },
     {

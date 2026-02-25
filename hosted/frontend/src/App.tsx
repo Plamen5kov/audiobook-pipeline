@@ -59,7 +59,23 @@ export default function App() {
   const handlePollResult = useCallback((status: StatusResponse) => {
     const { phase: p, status: st, segments: segs, total, output_file, error: err, nodes: n } = status;
 
-    if (n) setNodes(n);
+    if (n) setNodes(prev => {
+      const merged: Record<string, NodeStatus> = { ...prev };
+      const now = Math.floor(Date.now() / 1000);
+      for (const [key, val] of Object.entries(n)) {
+        const mergedNode = { ...(prev?.[key] ?? {}), ...val };
+        // Clear stale finished from a previous run when a node restarts
+        if (val.status === 'running') {
+          delete mergedNode.finished;
+        }
+        // If transitioning to done without a finished timestamp, capture current time
+        if (mergedNode.status === 'done' && !mergedNode.finished && mergedNode.started) {
+          mergedNode.finished = now;
+        }
+        merged[key] = mergedNode;
+      }
+      return merged;
+    });
 
     if (err) {
       updatePhase('analyzing', 'error', err);
@@ -144,6 +160,7 @@ export default function App() {
     voiceMapping: Record<string, string>,
     engineMapping: Record<string, string>,
     skipScriptAdapter: boolean,
+    editedSegments: Segment[],
   ) => {
     stopPolling();
     setError('');
@@ -155,21 +172,18 @@ export default function App() {
       assembling:   { state: 'pending', detail: 'Waiting…' },
     }));
 
-    // Use a fresh job ID each synthesis so polling never reads a stale status file
-    const synthJobId = uuid();
-    jobIdRef.current = synthJobId;
-    setActiveJobId(synthJobId);
-    setNodes(undefined);
+    // Reuse the same job ID so the pipeline map stays continuous from analyze → synthesize
+    const jobId = jobIdRef.current;
 
     try {
-      await startSynthesis(segments, voiceMapping, engineMapping, synthJobId, skipScriptAdapter);
+      await startSynthesis(editedSegments, voiceMapping, engineMapping, jobId, skipScriptAdapter);
     } catch (e: unknown) {
       setError('Failed to start synthesis: ' + (e instanceof Error ? e.message : String(e)));
       setPhase('voice-cast');
       return;
     }
 
-    startPoll(synthJobId);
+    startPoll(jobId);
   }, [segments, stopPolling, startPoll]);
 
   const showProgress  = phase !== 'idle';

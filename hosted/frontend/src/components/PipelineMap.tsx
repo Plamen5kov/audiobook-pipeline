@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { NodeStatus } from '../api';
 
 const NODE_ORDER = ['text-analyzer', 'script-adapter', 'tts-router', 'audio-assembly'] as const;
@@ -9,14 +10,7 @@ const NODE_LABELS: Record<string, string> = {
   'audio-assembly': 'audio-assembly',
 };
 
-function duration(node: NodeStatus): string {
-  if (node.started && node.finished) {
-    return `${node.finished - node.started}s`;
-  }
-  return '';
-}
-
-function NodeBlock({ name, node }: { name: string; node: NodeStatus | undefined }) {
+function NodeBlock({ name, node, now }: { name: string; node: NodeStatus | undefined; now: number }) {
   const st = node?.status ?? 'pending';
 
   let stateClass = 'node-state-pending';
@@ -24,14 +18,15 @@ function NodeBlock({ name, node }: { name: string; node: NodeStatus | undefined 
 
   if (st === 'running') {
     stateClass = 'node-state-running';
+    const elapsed = node?.started ? `${now - node.started}s` : '';
     if (name === 'tts-router' && node?.completed !== undefined && node?.total) {
-      indicator = `${node.completed} / ${node.total}`;
+      indicator = elapsed ? `${node.completed}/${node.total} ${elapsed}` : `${node.completed}/${node.total}`;
     } else {
-      indicator = '⟳';
+      indicator = elapsed ? `⟳ ${elapsed}` : '⟳';
     }
   } else if (st === 'done') {
     stateClass = 'node-state-done';
-    const d = node ? duration(node) : '';
+    const d = node?.started && node?.finished ? `${node.finished - node.started}s` : '';
     indicator = d ? `✓ ${d}` : '✓';
   } else if (st === 'error') {
     stateClass = 'node-state-error';
@@ -54,6 +49,13 @@ interface Props {
 }
 
 export function PipelineMap({ nodes, jobId }: Props) {
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    return () => clearInterval(id);
+  }, []);
+
   if (!nodes) return null;
 
   return (
@@ -62,7 +64,7 @@ export function PipelineMap({ nodes, jobId }: Props) {
       <div className="pipeline-row">
         {NODE_ORDER.map((name, i) => (
           <span key={name} className="pipeline-item">
-            <NodeBlock name={name} node={nodes[name]} />
+            <NodeBlock name={name} node={nodes[name]} now={now} />
             {i < NODE_ORDER.length - 1 && <span className="pipeline-arrow">→</span>}
           </span>
         ))}

@@ -503,6 +503,73 @@ textarea {
   cursor: not-allowed;
 }
 
+/* ── Segments JSON editor ────────────────────────────────────── */
+
+.segments-editor {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-top: 16px;
+  overflow: hidden;
+}
+
+.segments-editor-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  user-select: none;
+  list-style: none;
+}
+
+.segments-editor-summary::-webkit-details-marker { display: none; }
+
+.segments-editor-summary::before {
+  content: '▶';
+  font-size: 0.65rem;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+
+details[open] > .segments-editor-summary::before {
+  transform: rotate(90deg);
+}
+
+.segments-reset-btn {
+  margin-left: auto;
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.segments-reset-btn:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
+.segments-reset-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.segments-editor-body {
+  border-top: 1px solid var(--border);
+  padding: 10px 12px 12px;
+}
+
+.segments-json-textarea {
+  font-family: 'SFMono-Regular', 'Consolas', 'Menlo', monospace;
+  font-size: 0.75rem;
+  min-height: 220px;
+  line-height: 1.5;
+}
+
+.segments-json-error {
+  font-size: 0.78rem;
+  color: var(--error);
+  margin-top: 6px;
+}
+
 /* ── Audio player / result ───────────────────────────────────── */
 
 .audio-player {

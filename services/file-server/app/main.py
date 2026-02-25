@@ -8,7 +8,7 @@ import aiofiles
 import httpx
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -67,17 +67,57 @@ async def get_voice(filename: str):
     return FileResponse(path, media_type="audio/wav", filename=filename)
 
 
+
+
 @app.get("/audio/{filename}")
-async def get_audio(filename: str):
-    """Serve a generated audiobook file from the output directory."""
+async def get_audio(filename: str, request: Request):
+    """Serve a generated audiobook file with range-request support for browser seek/duration."""
     if ".." in filename or "/" in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
-
     path = os.path.join(OUTPUT_DIR, filename)
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail=f"Audio file not found: {filename}")
 
-    return FileResponse(path, media_type="audio/wav", filename=filename)
+    file_size = os.path.getsize(path)
+    range_header = request.headers.get("Range")
+
+    async def stream(start: int, length: int):
+        async with aiofiles.open(path, "rb") as f:
+            await f.seek(start)
+            remaining = length
+            while remaining > 0:
+                chunk = await f.read(min(65536, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                yield chunk
+
+    if range_header:
+        m = re.match(r"bytes=(\d+)-(\d*)", range_header)
+        if m:
+            start = int(m.group(1))
+            end = int(m.group(2)) if m.group(2) else file_size - 1
+            end = min(end, file_size - 1)
+            length = end - start + 1
+            return StreamingResponse(
+                stream(start, length),
+                status_code=206,
+                media_type="audio/wav",
+                headers={
+                    "Content-Range": f"bytes {start}-{end}/{file_size}",
+                    "Accept-Ranges": "bytes",
+                    "Content-Length": str(length),
+                },
+            )
+
+    return StreamingResponse(
+        stream(0, file_size),
+        media_type="audio/wav",
+        headers={
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(file_size),
+        },
+    )
 
 
 @app.post("/status/{job_id}")

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Voice, Segment, voiceUrl } from '../api';
 
 const QWEN_VOICES = ['Vivian', 'Serena', 'Uncle_Fu', 'Dylan', 'Eric', 'Ryan', 'Aiden', 'Ono_Anna', 'Sohee'];
@@ -9,7 +9,7 @@ type Engine = 'xtts-v2' | 'qwen3-tts';
 interface Props {
   segments: Segment[];
   voices: Voice[];
-  onGenerate: (voiceMapping: Record<string, string>, engineMapping: Record<string, string>, skipScriptAdapter: boolean) => void;
+  onGenerate: (voiceMapping: Record<string, string>, engineMapping: Record<string, string>, skipScriptAdapter: boolean, segments: Segment[]) => void;
   disabled?: boolean;
 }
 
@@ -38,10 +38,17 @@ export function VoiceCast({ segments, voices, onGenerate, disabled = false }: Pr
     return init;
   });
 
-  // playing = WAV filename currently previewing (xtts-v2 only)
-  const [skipAdapter, setSkipAdapter] = useState(false);
-  const [playing, setPlaying] = useState<string | null>(null);
+  const [skipAdapter, setSkipAdapter] = useState(true);
+  const [playing, setPlaying]         = useState<string | null>(null);
+  const [editJson, setEditJson]       = useState(() => JSON.stringify(segments, null, 2));
+  const [jsonError, setJsonError]     = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(new Audio());
+
+  // Reset editable JSON whenever a new analysis arrives
+  useEffect(() => {
+    setEditJson(JSON.stringify(segments, null, 2));
+    setJsonError(null);
+  }, [segments]);
 
   const togglePreview = useCallback((filename: string) => {
     const audio = audioRef.current;
@@ -69,9 +76,31 @@ export function VoiceCast({ segments, voices, onGenerate, disabled = false }: Pr
     }));
   }
 
+  function handleJsonChange(value: string) {
+    setEditJson(value);
+    try {
+      JSON.parse(value);
+      setJsonError(null);
+    } catch (e) {
+      setJsonError((e as Error).message);
+    }
+  }
+
+  function handleReset(e: React.MouseEvent) {
+    e.stopPropagation();
+    setEditJson(JSON.stringify(segments, null, 2));
+    setJsonError(null);
+  }
+
   function handleGenerate() {
     audioRef.current.pause();
-    onGenerate(selected, engines, skipAdapter);
+    if (jsonError) return;
+    let parsedSegments: Segment[] = segments;
+    try {
+      const parsed = JSON.parse(editJson);
+      if (Array.isArray(parsed)) parsedSegments = parsed as Segment[];
+    } catch { /* blocked by jsonError check above */ }
+    onGenerate(selected, engines, skipAdapter, parsedSegments);
   }
 
   return (
@@ -79,7 +108,7 @@ export function VoiceCast({ segments, voices, onGenerate, disabled = false }: Pr
       <h2>Voice Cast</h2>
       <p className="subtitle">Choose an engine and voice for each character, then generate.</p>
 
-      {speakers.map((speaker, si) => {
+      {speakers.map((speaker) => {
         const engine = engines[speaker] ?? 'xtts-v2';
         const isQwen = engine === 'qwen3-tts';
 
@@ -145,6 +174,25 @@ export function VoiceCast({ segments, voices, onGenerate, disabled = false }: Pr
         );
       })}
 
+      <details className="segments-editor">
+        <summary className="segments-editor-summary">
+          Segments JSON
+          <button className="segments-reset-btn" onClick={handleReset} disabled={disabled}>
+            Reset
+          </button>
+        </summary>
+        <div className="segments-editor-body">
+          <textarea
+            className="segments-json-textarea"
+            value={editJson}
+            onChange={e => handleJsonChange(e.target.value)}
+            spellCheck={false}
+            disabled={disabled}
+          />
+          {jsonError && <div className="segments-json-error">⚠ {jsonError}</div>}
+        </div>
+      </details>
+
       <div className="cast-actions">
         <label className="toggle-label">
           <span className="toggle-text">Script rewriting</span>
@@ -158,7 +206,7 @@ export function VoiceCast({ segments, voices, onGenerate, disabled = false }: Pr
             <span className="toggle-slider" />
           </span>
         </label>
-        <button className="btn-primary" onClick={handleGenerate} disabled={disabled}>
+        <button className="btn-primary" onClick={handleGenerate} disabled={disabled || !!jsonError}>
           {disabled ? 'Synthesizing…' : 'Generate Audiobook'}
         </button>
       </div>

@@ -25,6 +25,7 @@ services:
       - root_ollama:/root/.ollama
     environment:
       - OLLAMA_CONTEXT_LENGTH=16384
+      - OLLAMA_KEEP_ALIVE=-1
     deploy:
       resources:
         reservations:
@@ -40,7 +41,7 @@ services:
       - "8001:8001"
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
-      - MODEL_NAME=llama3.1:70b
+      - MODEL_NAME=qwen2.5:7b
     depends_on:
       - ollama
     restart: unless-stopped
@@ -51,7 +52,7 @@ services:
       - "8002:8002"
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
-      - MODEL_NAME=llama3.1:70b
+      - MODEL_NAME=qwen2.5:7b
     depends_on:
       - ollama
     restart: unless-stopped
