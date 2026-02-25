@@ -1,9 +1,14 @@
 import { Injectable, HttpException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { StreamableFile } from '@nestjs/common';
 import axios, { AxiosError } from 'axios';
 import FormData from 'form-data';
 import { Readable } from 'stream';
+
+export interface AudioStream {
+  stream: Readable;
+  status: number;
+  headers: Record<string, string>;
+}
 
 @Injectable()
 export class ProxyService {
@@ -29,16 +34,26 @@ export class ProxyService {
     }
   }
 
-  /** Stream an audio file from DGX back to the client. */
-  async streamAudio(path: string): Promise<StreamableFile> {
+  /** Stream an audio file from DGX, forwarding Range and propagating Content-Length/Content-Range. */
+  async streamAudio(path: string, rangeHeader?: string): Promise<AudioStream> {
     try {
+      const reqHeaders: Record<string, string> = {};
+      if (rangeHeader) reqHeaders['Range'] = rangeHeader;
+
       const res = await axios.get(`${this.dgxUrl}${path}`, {
         responseType: 'stream',
         timeout: 0,
+        headers: reqHeaders,
+        validateStatus: (s) => s >= 200 && s < 400,
       });
-      return new StreamableFile(res.data as Readable, {
-        type: 'audio/wav',
-      });
+
+      const headers: Record<string, string> = {};
+      for (const h of ['content-length', 'content-range', 'accept-ranges']) {
+        const v = res.headers[h];
+        if (v) headers[h] = String(v);
+      }
+
+      return { stream: res.data as Readable, status: res.status, headers };
     } catch (err) {
       this.rethrow(err);
     }

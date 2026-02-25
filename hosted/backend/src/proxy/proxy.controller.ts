@@ -32,17 +32,19 @@ export class ProxyController {
   }
 
   @Get('voices/:filename')
-  async getVoice(@Param('filename') filename: string, @Res({ passthrough: true }) res: Response) {
-    res.set({ 'Content-Type': 'audio/wav' });
-    return this.proxy.streamAudio(`/voices/${filename}`);
+  async getVoice(@Param('filename') filename: string, @Req() req: Request, @Res() res: Response): Promise<void> {
+    const { stream, status, headers } = await this.proxy.streamAudio(`/voices/${filename}`, req.headers['range'] as string | undefined);
+    res.status(status).set({ 'Content-Type': 'audio/wav', ...headers });
+    stream.pipe(res);
   }
 
   // ── Audio output ──────────────────────────────────────────────
 
   @Get('audio/:filename')
-  async getAudio(@Param('filename') filename: string, @Res({ passthrough: true }) res: Response) {
-    res.set({ 'Content-Type': 'audio/wav' });
-    return this.proxy.streamAudio(`/audio/${filename}`);
+  async getAudio(@Param('filename') filename: string, @Req() req: Request, @Res() res: Response): Promise<void> {
+    const { stream, status, headers } = await this.proxy.streamAudio(`/audio/${filename}`, req.headers['range'] as string | undefined);
+    res.status(status).set({ 'Content-Type': 'audio/wav', ...headers });
+    stream.pipe(res);
   }
 
   // ── Status ────────────────────────────────────────────────────
