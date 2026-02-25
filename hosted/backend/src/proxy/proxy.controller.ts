@@ -61,6 +61,14 @@ export class ProxyController {
     return data;
   }
 
+  // ── Services health ───────────────────────────────────────────
+
+  @Get('services/health')
+  async servicesHealth() {
+    const { data } = await this.proxy.forwardJson('GET', '/services/health');
+    return data;
+  }
+
   // ── Pipeline triggers ─────────────────────────────────────────
 
   @Post('api/analyze')

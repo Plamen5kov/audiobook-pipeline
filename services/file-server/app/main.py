@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -128,6 +129,33 @@ async def proxy_synthesize(request: Request):
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+_PIPELINE_SERVICES = {
+    "text-analyzer":  "http://text-analyzer:8001/health",
+    "script-adapter": "http://script-adapter:8002/health",
+    "xtts-v2":        "http://xtts-v2:8003/health",
+    "tts-router":     "http://tts-router:8010/health",
+    "qwen3-tts":      "http://qwen3-tts:8007/health",
+    "audio-assembly": "http://audio-assembly:8005/health",
+    "n8n":            f"{N8N_URL}/healthz",
+}
+
+
+@app.get("/services/health")
+async def services_health():
+    """Fan-out health check to all pipeline services in parallel."""
+    async def check(name: str, url: str) -> dict:
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as c:
+                r = await c.get(url)
+                data = r.json()
+                return {"name": name, "status": data.get("status", "ok"), "detail": data}
+        except Exception as exc:
+            return {"name": name, "status": "error", "detail": str(exc)}
+
+    results = await asyncio.gather(*[check(n, u) for n, u in _PIPELINE_SERVICES.items()])
+    return list(results)
 
 
 # Serve the frontend — mounted last so API routes take priority

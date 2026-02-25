@@ -17,13 +17,35 @@ export interface Segment {
   pause_before_ms: number;
 }
 
+export interface NodeStatus {
+  status: 'pending' | 'running' | 'done' | 'error';
+  started?: number;
+  finished?: number;
+  completed?: number;
+  total?: number;
+}
+
 export interface StatusResponse {
   phase: 'analyzing' | 'synthesizing' | 'done';
   status: 'running' | 'done' | 'error';
   segments?: Segment[];
   total?: number;
+  completed?: number;
   output_file?: string;
   error?: string;
+  nodes?: Record<string, NodeStatus>;
+}
+
+export interface ServiceStatus {
+  name: string;
+  status: 'ok' | 'loading' | 'error';
+  detail: Record<string, unknown> | string;
+}
+
+export async function getServicesHealth(): Promise<ServiceStatus[]> {
+  const res = await fetch(`${BASE}/services/health`);
+  if (!res.ok) throw new Error('health check failed');
+  return res.json();
 }
 
 export async function fetchVoices(): Promise<Voice[]> {

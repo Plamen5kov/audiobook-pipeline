@@ -84,7 +84,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const { job_id } = $input.first().json;\nreturn [{ json: { job_id, status_json: JSON.stringify({ phase: \"analyzing\", status: \"running\", job_id }) } }];"
+        "jsCode": "const { job_id } = $input.first().json;\nconst started_at = Math.floor(Date.now() / 1000);\nreturn [{ json: { job_id, started_at, status_json: JSON.stringify({ phase: \"analyzing\", status: \"running\", job_id, nodes: { \"text-analyzer\": { status: \"running\", started: started_at } } }) } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -118,7 +118,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const result = $input.first().json;\nconst prev = $('extract text from webhook').first().json;\nconst job_id = prev.job_id;\nconst segments = result.segments || [];\nconst title = prev.title;\nreturn [{ json: { job_id, status_json: JSON.stringify({ phase: 'analyzing', status: 'done', job_id, segments, title }) } }];"
+        "jsCode": "const result = $input.first().json;\nconst prev = $('extract text from webhook').first().json;\nconst job_id = prev.job_id;\nconst segments = result.segments || [];\nconst title = prev.title;\nconst started = $('write status (ar)').first().json.started_at;\nconst finished = Math.floor(Date.now() / 1000);\nreturn [{ json: { job_id, status_json: JSON.stringify({ phase: 'analyzing', status: 'done', job_id, segments, title, nodes: { \"text-analyzer\": { status: \"done\", started, finished } } }) } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,

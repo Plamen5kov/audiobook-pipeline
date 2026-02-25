@@ -76,11 +76,10 @@
     },
     {
       "parameters": {
-        "fieldToSplitOut": "segments",
-        "options": {}
+        "jsCode": "const adapted = $('script-adapter').first().json;\nconst segments = adapted.segments || [];\nreturn segments.map(seg => ({ json: seg }));"
       },
-      "type": "n8n-nodes-base.splitOut",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         800,
         0
@@ -90,7 +89,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const fs = require('fs');\nconst body = $(\"Webhook\").first().json.body || {};\nconst voiceMapping = body.voice_mapping || {};\nconst engineMapping = body.engine_mapping || {};\n\n// Read voice-cast.yaml as fallback for engine per speaker\nlet voiceCast = {};\ntry {\n  const raw = fs.readFileSync('/voice-cast.yaml', 'utf8');\n  const blocks = raw.split(/^  (\\w+):$/m);\n  for (let i = 1; i < blocks.length; i += 2) {\n    const name = blocks[i];\n    const blk = blocks[i + 1] || '';\n    const m = blk.match(/tts_service:\\s*(\\S+)/);\n    if (m) voiceCast[name] = { tts_service: m[1] };\n  }\n} catch(e) { /* fallback: all xtts-v2 */ }\n\nreturn $input.all().map(item => {\n  const segment = item.json;\n  const speaker = segment.speaker || 'default';\n  // Engine: prefer FE-specified, fall back to voice-cast.yaml, then xtts-v2\n  const castEntry = voiceCast[speaker] || voiceCast['default'] || {};\n  const engine = engineMapping[speaker] || castEntry.tts_service || 'xtts-v2';\n  // voiceMapping value meaning depends on engine:\n  //   xtts-v2   -> WAV filename  -> reference_audio_path\n  //   qwen3-tts -> Qwen speaker name -> qwen_speaker\n  const voiceValue = voiceMapping[speaker] || '';\n  const referenceAudioPath = engine !== 'qwen3-tts' ? `/voices/${voiceValue || 'generic_neutral.wav'}` : '';\n  const qwenSpeaker = engine === 'qwen3-tts' ? (voiceValue || '') : '';\n  return { json: { ...segment, reference_audio_path: referenceAudioPath, engine, qwen_speaker: qwenSpeaker } };\n});"
+        "jsCode": "const body = $('Webhook').first().json.body || {};\nconst voiceMapping = body.voice_mapping || {};\nconst engineMapping = body.engine_mapping || {};\n\nreturn $input.all().map(item => {\n  const segment = item.json;\n  const speaker = segment.speaker || 'default';\n  const engine = engineMapping[speaker] || 'xtts-v2';\n  const voiceValue = voiceMapping[speaker] || '';\n  const referenceAudioPath = engine !== 'qwen3-tts' ? `/voices/${voiceValue || 'generic_neutral.wav'}` : '';\n  const qwenSpeaker = engine === 'qwen3-tts' ? (voiceValue || '') : '';\n  return { json: { ...segment, reference_audio_path: referenceAudioPath, engine, qwen_speaker: qwenSpeaker } };\n});"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -139,7 +138,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const clips = $json.clips.map(item => ({\n  id: item.segment_id,\n  file_path: item.file_path,\n  pause_before_ms: item.pause_before_ms || 0\n}));\nconst ts = Date.now();\nreturn [{ json: { clips, output_filename: `chapter_${ts}.wav` } }];"
+        "jsCode": "const agg = $('aggregate clips').first().json;\nconst clips = agg.clips.map(item => ({\n  id: item.segment_id,\n  file_path: item.file_path,\n  pause_before_ms: item.pause_before_ms || 0\n}));\nconst ts = Date.now();\nreturn [{ json: { clips, output_filename: `chapter_${ts}.wav` } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -170,7 +169,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const { job_id, segments } = $input.first().json;\nreturn [{ json: { job_id, status_json: JSON.stringify({ phase: 'synthesizing', status: 'running', job_id, total: segments.length }) } }];"
+        "jsCode": "const { job_id, segments } = $input.first().json;\nconst total = segments.length;\nconst sr_started = Math.floor(Date.now() / 1000);\nreturn [{ json: { job_id, total, sr_started, status_json: JSON.stringify({ phase: 'synthesizing', status: 'running', job_id, total, nodes: { \"text-analyzer\": { status: \"done\" }, \"script-adapter\": { status: \"running\", started: sr_started }, \"tts-router\": { status: \"pending\" }, \"audio-assembly\": { status: \"pending\" } } }) } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -204,7 +203,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const result = $input.first().json;\nconst jobData = $(\"extract segments\").first().json;\nconst job_id = jobData.job_id;\nreturn [{ json: { job_id, status_json: JSON.stringify({ phase: \"synthesizing\", status: \"done\", job_id }) } }];"
+        "jsCode": "const jobData = $('extract segments').first().json;\nconst job_id = jobData.job_id;\nconst total = jobData.segments.length;\nreturn [{ json: { job_id, status_json: JSON.stringify({ phase: \"synthesizing\", status: \"done\", job_id, nodes: { \"text-analyzer\": { status: \"done\" }, \"script-adapter\": { status: \"done\" }, \"tts-router\": { status: \"done\", total }, \"audio-assembly\": { status: \"running\", started: Math.floor(Date.now() / 1000) } } }) } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -246,7 +245,7 @@
         300
       ],
       "parameters": {
-        "jsCode": "const result = $input.first().json;\nconst jobData = $(\"extract segments\").first().json;\nconst job_id = jobData.job_id;\nconst assemble = $(\"audio-assembly\").first().json;\nconst output_file = assemble.filename || assemble.output_filename || assemble.output_file || \"\";\nreturn [{ json: { job_id, status_json: JSON.stringify({ phase: \"done\", status: \"done\", job_id, output_file }) } }];"
+        "jsCode": "const jobData = $(\"extract segments\").first().json;\nconst job_id = jobData.job_id;\nconst assemble = $(\"audio-assembly\").first().json;\nconst output_file = assemble.filename || assemble.output_filename || assemble.output_file || \"\";\nreturn [{ json: { job_id, status_json: JSON.stringify({ phase: \"done\", status: \"done\", job_id, output_file, nodes: { \"text-analyzer\": { status: \"done\" }, \"script-adapter\": { status: \"done\" }, \"tts-router\": { status: \"done\" }, \"audio-assembly\": { status: \"done\", finished: Math.floor(Date.now() / 1000) } } }) } }];"
       }
     },
     {
@@ -257,6 +256,40 @@
       "position": [
         2600,
         300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=http://file-server:8080/status/{{ $json.job_id }}",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.status_json }}",
+        "options": {
+          "timeout": 10000
+        }
+      }
+    },
+    {
+      "id": "status-script-done-code",
+      "name": "write script done",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        608,
+        200
+      ],
+      "parameters": {
+        "jsCode": "const data = $('extract segments').first().json;\nconst job_id = data.job_id;\nconst total = data.segments.length;\nconst tts_started = Math.floor(Date.now() / 1000);\nreturn [{ json: { job_id, total, tts_started, status_json: JSON.stringify({ phase: 'synthesizing', status: 'running', job_id, total, nodes: { \"text-analyzer\": { status: \"done\" }, \"script-adapter\": { status: \"done\", finished: tts_started }, \"tts-router\": { status: \"running\", started: tts_started, completed: 0, total }, \"audio-assembly\": { status: \"pending\" } } }) } }];"
+      }
+    },
+    {
+      "id": "status-script-done-http",
+      "name": "POST script done",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        808,
+        200
       ],
       "parameters": {
         "method": "POST",
@@ -309,6 +342,28 @@
       "main": [
         [
           {
+            "node": "write script done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "write script done": {
+      "main": [
+        [
+          {
+            "node": "POST script done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST script done": {
+      "main": [
+        [
+          {
             "node": "split segments",
             "type": "main",
             "index": 0
@@ -353,7 +408,7 @@
       "main": [
         [
           {
-            "node": "prepare assemble request",
+            "node": "write status (sd)",
             "type": "main",
             "index": 0
           }
@@ -397,7 +452,7 @@
       "main": [
         [
           {
-            "node": "write status (sd)",
+            "node": "write status (fd)",
             "type": "main",
             "index": 0
           }
@@ -419,7 +474,7 @@
       "main": [
         [
           {
-            "node": "write status (fd)",
+            "node": "prepare assemble request",
             "type": "main",
             "index": 0
           }

@@ -1,9 +1,11 @@
 import { useState, useRef, useCallback } from 'react';
-import { analyzeText, fetchVoices, pollStatus, startSynthesis, Voice, Segment, StatusResponse } from './api';
+import { analyzeText, fetchVoices, pollStatus, startSynthesis, Voice, Segment, StatusResponse, NodeStatus } from './api';
 import { AnalyzeForm } from './components/AnalyzeForm';
 import { StatusProgress, PhaseState } from './components/StatusProgress';
 import { VoiceCast } from './components/VoiceCast';
 import { AudioPlayer } from './components/AudioPlayer';
+import ServiceHealth from './components/ServiceHealth';
+import { PipelineMap } from './components/PipelineMap';
 
 type AppPhase = 'idle' | 'analyzing' | 'voice-cast' | 'synthesizing' | 'done';
 
@@ -33,6 +35,8 @@ export default function App() {
   const [voices, setVoices]           = useState<Voice[]>([]);
   const [segments, setSegments]       = useState<Segment[]>([]);
   const [outputFile, setOutputFile]   = useState<string>('');
+  const [nodes, setNodes]             = useState<Record<string, NodeStatus> | undefined>(undefined);
+  const [activeJobId, setActiveJobId] = useState<string>('');
 
   const jobIdRef   = useRef<string>('');
   const pollRef    = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -53,7 +57,9 @@ export default function App() {
   }, []);
 
   const handlePollResult = useCallback((status: StatusResponse) => {
-    const { phase: p, status: st, segments: segs, total, output_file, error: err } = status;
+    const { phase: p, status: st, segments: segs, total, output_file, error: err, nodes: n } = status;
+
+    if (n) setNodes(n);
 
     if (err) {
       updatePhase('analyzing', 'error', err);
@@ -112,6 +118,8 @@ export default function App() {
 
     const jobId = uuid();
     jobIdRef.current = jobId;
+    setActiveJobId(jobId);
+    setNodes(undefined);
 
     const [analyzeResult, fetchedVoices] = await Promise.allSettled([
       analyzeText(title, text, jobId),
@@ -149,6 +157,8 @@ export default function App() {
     // Use a fresh job ID each synthesis so polling never reads a stale status file
     const synthJobId = uuid();
     jobIdRef.current = synthJobId;
+    setActiveJobId(synthJobId);
+    setNodes(undefined);
 
     try {
       await startSynthesis(segments, voiceMapping, engineMapping, synthJobId);
@@ -171,6 +181,10 @@ export default function App() {
         <h1>Audiobook <span>Generator</span></h1>
         <p>Paste your chapter text and generate a fully narrated audiobook with distinct character voices.</p>
       </header>
+
+      <ServiceHealth />
+
+      <PipelineMap nodes={nodes} jobId={activeJobId} />
 
       <AnalyzeForm
         onAnalyze={handleAnalyze}

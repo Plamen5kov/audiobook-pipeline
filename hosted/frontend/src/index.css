@@ -31,6 +31,120 @@ body {
   body { padding: 40px 20px 80px; }
 }
 
+/* ── Service health strip ────────────────────────────────────── */
+
+.health-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  max-width: 720px;
+  margin-bottom: 16px;
+}
+
+.health-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  cursor: default;
+  white-space: nowrap;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot-ok      { background: var(--success); }
+.dot-loading { background: var(--warning); }
+.dot-error   { background: var(--error); }
+
+/* ── Pipeline map ─────────────────────────────────────────────── */
+
+.pipeline-map {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  max-width: 720px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.pipeline-job-id {
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  align-self: flex-start;
+}
+
+.pipeline-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.pipeline-item {
+  display: flex;
+  align-items: center;
+}
+
+.pipeline-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  min-width: 110px;
+}
+
+.pipeline-node-name {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-family: monospace;
+}
+
+.pipeline-node-indicator {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pipeline-arrow {
+  padding: 0 8px;
+  color: var(--text-dim);
+  font-size: 16px;
+}
+
+.node-state-pending  .pipeline-node-indicator { color: var(--text-dim); }
+.node-state-running  { border-color: var(--accent); }
+.node-state-running  .pipeline-node-indicator { color: var(--accent); }
+.node-state-running  .pipeline-node-name { animation: pulse 1.4s ease-in-out infinite; }
+.node-state-done     { border-color: var(--success); }
+.node-state-done     .pipeline-node-indicator { color: var(--success); }
+.node-state-error    { border-color: var(--error); }
+.node-state-error    .pipeline-node-indicator { color: var(--error); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.45; }
+}
+
 /* ── Cards ───────────────────────────────────────────────────── */
 
 .card {
