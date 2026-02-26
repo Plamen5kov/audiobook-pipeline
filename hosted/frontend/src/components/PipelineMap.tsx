@@ -3,6 +3,13 @@ import { NodeStatus } from '../api';
 
 const NODE_ORDER = ['text-analyzer', 'script-adapter', 'tts-router', 'audio-assembly'] as const;
 
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}m ${s}s`;
+}
+
 const NODE_LABELS: Record<string, string> = {
   'text-analyzer':  'text-analyzer',
   'script-adapter': 'script-adapter',
@@ -18,7 +25,7 @@ function NodeBlock({ name, node, now }: { name: string; node: NodeStatus | undef
 
   if (st === 'running') {
     stateClass = 'node-state-running';
-    const elapsed = node?.started ? `${now - node.started}s` : '';
+    const elapsed = node?.started ? formatDuration(now - node.started) : '';
     if (name === 'tts-router' && node?.completed !== undefined && node?.total) {
       indicator = elapsed ? `${node.completed}/${node.total} ${elapsed}` : `${node.completed}/${node.total}`;
     } else {
@@ -26,7 +33,7 @@ function NodeBlock({ name, node, now }: { name: string; node: NodeStatus | undef
     }
   } else if (st === 'done') {
     stateClass = 'node-state-done';
-    const d = node?.started && node?.finished ? `${node.finished - node.started}s` : '';
+    const d = node?.started && node?.finished ? formatDuration(node.finished - node.started) : '';
     indicator = d ? `✓ ${d}` : '✓';
   } else if (st === 'error') {
     stateClass = 'node-state-error';

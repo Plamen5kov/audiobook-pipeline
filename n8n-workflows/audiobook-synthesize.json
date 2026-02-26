@@ -131,7 +131,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const agg = $('aggregate clips').first().json;\nconst clips = agg.clips.map(item => ({\n  id: item.segment_id,\n  file_path: item.file_path,\n  pause_before_ms: item.pause_before_ms || 0\n}));\nconst ts = Date.now();\nreturn [{ json: { clips, output_filename: `chapter_${ts}.wav` } }];"
+        "jsCode": "const agg = $('aggregate clips').first().json;\nconst origSegments = $('split segments').all().map(i => i.json);\nconst pauseMap = {};\nfor (const seg of origSegments) { pauseMap[seg.id] = seg.pause_before_ms || 0; }\nconst clips = agg.clips.map(item => ({\n  id: item.segment_id,\n  file_path: item.file_path,\n  pause_before_ms: pauseMap[item.segment_id] || 0\n}));\nconst ts = Date.now();\nreturn [{ json: { clips, output_filename: `chapter_${ts}.wav` } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,

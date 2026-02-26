@@ -35,11 +35,17 @@ async def classify_emotions(
     if not segments:
         return segments
 
-    log.info("Emotion classifier: classifying %d segments in batches of %d",
-             len(segments), _BATCH_SIZE)
+    # Only classify dialogue segments — narrator always gets neutral.
+    dialogue = [s for s in segments if s.kind == "dialogue"]
+    if not dialogue:
+        log.info("Emotion classifier: no dialogue segments, skipping LLM call")
+        return segments
 
-    for batch_start in range(0, len(segments), _BATCH_SIZE):
-        batch = segments[batch_start:batch_start + _BATCH_SIZE]
+    log.info("Emotion classifier: classifying %d dialogue segments in batches of %d",
+             len(dialogue), _BATCH_SIZE)
+
+    for batch_start in range(0, len(dialogue), _BATCH_SIZE):
+        batch = dialogue[batch_start:batch_start + _BATCH_SIZE]
 
         items = [
             {

@@ -6,3 +6,4 @@ fearful=speak with a trembling, nervous, fearful tone
 excited=speak with high energy and excitement
 tense=speak with urgency and tension in your voice
 contemplative=speak slowly and thoughtfully, as if pondering deeply
+curious=speak with an inquisitive, questioning tone

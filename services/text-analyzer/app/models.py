@@ -6,7 +6,7 @@ from typing import Optional
 
 ALLOWED_EMOTIONS = frozenset([
     "neutral", "happy", "sad", "angry",
-    "fearful", "excited", "tense", "contemplative",
+    "fearful", "excited", "tense", "contemplative", "curious",
 ])
 
 

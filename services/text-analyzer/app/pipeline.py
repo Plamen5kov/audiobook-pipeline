@@ -163,6 +163,14 @@ async def run_pipeline(
     # ------------------------------------------------------------------
     # Build output
     # ------------------------------------------------------------------
+    # Post-processing overrides after emotion classifier.
+    for s in segments:
+        if s.kind == "narration":
+            s.emotion = "neutral"
+            s.intensity = 0.5
+        elif s.kind == "dialogue" and s.original_text.rstrip().endswith("?"):
+            s.emotion = "curious"
+
     output_segments = [
         {
             "id": s.id,
@@ -180,11 +188,11 @@ async def run_pipeline(
     # Log summary.
     log.info(
         "Pipeline complete: %d segments, %d characters | "
-        "total=%dms (programmatic=%dms, ai=%dms)",
+        "total=%s (programmatic=%s, ai=%s)",
         len(output_segments), len(characters),
-        report["total_duration_ms"],
-        report["programmatic_duration_ms"],
-        report["ai_duration_ms"],
+        report["total_duration"],
+        report["programmatic_duration"],
+        report["ai_duration"],
     )
 
     return PipelineResult(
@@ -199,6 +207,21 @@ def _count_unknown(segments: list[Segment]) -> int:
     return sum(1 for s in segments if s.kind == "dialogue" and s.speaker == "unknown")
 
 
+def _format_duration(ms: int) -> str:
+    """Format milliseconds as a human-readable duration.
+
+    Examples: ``"45ms"``, ``"3s"``, ``"59s"``, ``"1m 24s"``, ``"10m 4s"``
+    """
+    if ms < 1000:
+        return f"{ms}ms"
+    total_seconds = ms // 1000
+    if total_seconds < 60:
+        return f"{total_seconds}s"
+    minutes = total_seconds // 60
+    seconds = total_seconds % 60
+    return f"{minutes}m {seconds}s"
+
+
 def _build_report(metrics: list[NodeMetrics]) -> dict:
     """Build the structured report dict from node metrics."""
     total_ms = sum(m.duration_ms for m in metrics)
@@ -207,13 +230,17 @@ def _build_report(metrics: list[NodeMetrics]) -> dict:
 
     return {
         "total_duration_ms": total_ms,
+        "total_duration": _format_duration(total_ms),
         "programmatic_duration_ms": prog_ms,
+        "programmatic_duration": _format_duration(prog_ms),
         "ai_duration_ms": ai_ms,
+        "ai_duration": _format_duration(ai_ms),
         "nodes": [
             {
                 "node": m.node_name,
                 "type": m.node_type,
                 "duration_ms": m.duration_ms,
+                "duration": _format_duration(m.duration_ms),
                 "segments_processed": m.segments_processed,
                 "segments_affected": m.segments_affected,
             }

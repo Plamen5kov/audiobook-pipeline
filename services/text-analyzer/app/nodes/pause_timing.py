@@ -13,11 +13,11 @@ log = logging.getLogger(__name__)
 
 # Pause durations in milliseconds.
 PAUSE_FIRST = 0
-PAUSE_SCENE_BREAK = 1200          # blank line between paragraphs
-PAUSE_PARAGRAPH_BREAK = 500       # new paragraph
-PAUSE_DIALOGUE_AFTER_NARRATION = 300
-PAUSE_NARRATION_AFTER_DIALOGUE = 200
-PAUSE_DIALOGUE_TURN = 200         # consecutive dialogue in same paragraph
+PAUSE_SCENE_BREAK = 2000          # blank line between paragraphs
+PAUSE_PARAGRAPH_BREAK = 1000      # new paragraph (narrator → narrator)
+PAUSE_DIALOGUE_AFTER_NARRATION = 700
+PAUSE_NARRATION_AFTER_DIALOGUE = 600
+PAUSE_DIALOGUE_TURN = 500         # consecutive dialogue in same paragraph
 
 
 def assign_pauses(segments: list[Segment]) -> list[Segment]:

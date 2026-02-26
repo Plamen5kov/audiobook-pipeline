@@ -43,13 +43,13 @@ async def assemble(request: AssembleRequest):
 
         segment_audio = AudioSegment.from_file(clip.file_path)
 
-        # Add pause before this segment
         if clip.pause_before_ms > 0:
-            silence = AudioSegment.silent(duration=clip.pause_before_ms)
-            combined += silence
-
-        # Crossfade with previous audio if we have some
-        if len(combined) > request.crossfade_ms and request.crossfade_ms > 0:
+            # Insert silence THEN append audio (no crossfade — the silence
+            # IS the gap and must not be eaten by an overlap).
+            combined += AudioSegment.silent(duration=clip.pause_before_ms)
+            combined += segment_audio
+        elif len(combined) > request.crossfade_ms and request.crossfade_ms > 0:
+            # No pause requested — use a short crossfade for smooth flow.
             combined = combined.append(segment_audio, crossfade=request.crossfade_ms)
         else:
             combined += segment_audio
