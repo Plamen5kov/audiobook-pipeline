@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
@@ -16,22 +17,9 @@ app = FastAPI(title="Script Adapter", description="Rewrites text segments for op
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 MODEL_NAME = os.getenv("MODEL_NAME", "llama3.1:70b")
 
-SYSTEM_PROMPT = """You are a script adapter for audiobook production. You receive structured text segments and must rewrite them for spoken delivery.
-
-For each segment, produce a "spoken_text" version by applying these rules:
-
-1. For DIALOGUE segments: strip attribution phrases ("she said", "he whispered angrily", etc.) — keep only the words the character actually says. The emotion and delivery style will be handled by the TTS engine.
-2. For NARRATION segments: keep the full text but optimize for listening:
-   - Expand abbreviations ("Dr." → "Doctor", "St." → "Street" or "Saint" based on context)
-   - Convert numbers to words ("42" → "forty-two", "1984" → "nineteen eighty-four" when it's a year)
-   - Expand acronyms if they would be spoken as words
-3. Do NOT change the meaning, tone, or content — only adapt the form for speech.
-
-Return ONLY valid JSON — an array of objects with "id" and "spoken_text" fields:
-[
-  {"id": 1, "spoken_text": "adapted text here"},
-  {"id": 2, "spoken_text": "adapted text here"}
-]"""
+PROMPTS_DIR = Path(__file__).parent / "prompts"
+SYSTEM_PROMPT = (PROMPTS_DIR / "system.txt").read_text().strip()
+USER_PROMPT_TEMPLATE = (PROMPTS_DIR / "user.txt").read_text().strip()
 
 
 class Segment(BaseModel):
@@ -82,7 +70,7 @@ async def adapt_script(request: AdaptRequest):
         {"id": s.id, "speaker": s.speaker, "original_text": s.original_text}
         for s in request.segments
     ]
-    prompt = f"Adapt these segments for spoken delivery:\n\n{json.dumps(segments_for_prompt, indent=2)}"
+    prompt = USER_PROMPT_TEMPLATE.format(segments_json=json.dumps(segments_for_prompt, indent=2))
 
     log.info("Calling Ollama model=%s", MODEL_NAME)
     async with httpx.AsyncClient(timeout=None) as client:

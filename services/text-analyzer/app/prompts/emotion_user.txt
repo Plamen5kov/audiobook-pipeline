@@ -1,0 +1,5 @@
+Classify the emotion for each of the following segments. Use ONLY these emotions: {allowed_emotions}
+
+{segments}
+
+Return ONLY: {{"emotions": [{{"id": N, "emotion": "value", "intensity": 0.5}}, ...]}}

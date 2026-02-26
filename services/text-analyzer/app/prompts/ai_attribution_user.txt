@@ -1,0 +1,7 @@
+Known characters: {character_names}
+
+The following dialogue segments have unknown speakers. For each one, I've included surrounding context (3 segments before and after). Determine who is speaking each dialogue segment.
+
+{queries}
+
+Return ONLY: {{"attributions": [{{"segment_id": N, "speaker": "Name"}}, ...]}}

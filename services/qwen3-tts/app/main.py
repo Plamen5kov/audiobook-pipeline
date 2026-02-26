@@ -1,5 +1,6 @@
 import logging
 import os
+from pathlib import Path
 
 import soundfile as sf
 import torch
@@ -29,16 +30,22 @@ _voice_profiles: dict = {}
 QWEN_DEFAULT_SPEAKER = "Ryan"
 
 # Maps pipeline emotion values → natural-language instruct phrases for Qwen.
-EMOTION_PHRASES: dict[str, str] = {
-    "neutral":       "",
-    "happy":         "speak with warmth and cheerfulness",
-    "sad":           "speak with a tone of sadness and melancholy",
-    "angry":         "speak very angrily with sharp emphasis",
-    "fearful":       "speak with a trembling, nervous, fearful tone",
-    "excited":       "speak with high energy and excitement",
-    "tense":         "speak with urgency and tension in your voice",
-    "contemplative": "speak slowly and thoughtfully, as if pondering deeply",
-}
+# Loaded from prompts/emotion_phrases.txt (one "emotion=phrase" per line).
+PROMPTS_DIR = Path(__file__).parent / "prompts"
+
+
+def _load_emotion_phrases() -> dict[str, str]:
+    phrases: dict[str, str] = {}
+    for line in (PROMPTS_DIR / "emotion_phrases.txt").read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, _, value = line.partition("=")
+        phrases[key.strip()] = value.strip()
+    return phrases
+
+
+EMOTION_PHRASES: dict[str, str] = _load_emotion_phrases()
 
 
 def _load_voice_cast():
