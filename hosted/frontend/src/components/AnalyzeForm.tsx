@@ -7,8 +7,8 @@ interface Props {
 }
 
 export function AnalyzeForm({ onAnalyze, disabled, error }: Props) {
-  const [title, setTitle] = useState('Chapter 1: The Awakening');
-  const [text, setText]   = useState('');
+  const [title, setTitle] = useState('Chapter 1: Strange Business');
+  const [text, setText]   = useState(`\u201CWhat the bloody hell is going on?\u201D Jason asked.\nAs if in response to his question, something appeared in front of him. It looked like a touch screen, floating in the air, disembodied. He reached out to touch it with an experimental finger, the screen shimmering as his finger passed straight through.\n\u201CHologram?\u201D`);
 
   function handleSubmit() {
     if (!text.trim()) { alert('Please paste chapter text first.'); return; }
