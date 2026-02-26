@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 from pathlib import Path
 
 import soundfile as sf
@@ -29,12 +30,16 @@ _voice_profiles: dict = {}
 # Fallback Qwen speaker when voice-cast.yaml has no qwen_speaker for a character.
 QWEN_DEFAULT_SPEAKER = "Ryan"
 
-# Maps pipeline emotion values → natural-language instruct phrases for Qwen.
+# ---------------------------------------------------------------------------
+# Emotion phrase mapping
+# ---------------------------------------------------------------------------
+# Maps pipeline emotion values to natural-language instruct phrases for Qwen.
 # Loaded from prompts/emotion_phrases.txt (one "emotion=phrase" per line).
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 
 def _load_emotion_phrases() -> dict[str, str]:
+    """Parse the emotion_phrases.txt file into an {emotion: phrase} dict."""
     phrases: dict[str, str] = {}
     for line in (PROMPTS_DIR / "emotion_phrases.txt").read_text().splitlines():
         line = line.strip()
@@ -47,31 +52,39 @@ def _load_emotion_phrases() -> dict[str, str]:
 
 EMOTION_PHRASES: dict[str, str] = _load_emotion_phrases()
 
+# ---------------------------------------------------------------------------
+# Voice cast helpers
+# ---------------------------------------------------------------------------
 
-def _load_voice_cast():
+
+def _load_voice_cast() -> None:
+    """Load voice profiles from voice-cast.yaml into the module-level dict."""
     global _voice_profiles
     if not os.path.exists(VOICE_CAST_PATH):
-        log.warning("voice-cast.yaml not found at %s — using defaults for all speakers", VOICE_CAST_PATH)
+        log.warning("voice-cast.yaml not found at path=%s -- using defaults for all speakers", VOICE_CAST_PATH)
         _voice_profiles = {}
         return
     with open(VOICE_CAST_PATH, "r") as f:
         config = yaml.safe_load(f)
     _voice_profiles = config.get("voices", {})
-    log.info("Loaded %d voice profiles from %s", len(_voice_profiles), VOICE_CAST_PATH)
+    log.info("voice cast loaded: profiles=%d path=%s", len(_voice_profiles), VOICE_CAST_PATH)
 
 
 def _resolve_qwen_speaker(speaker: str) -> str:
+    """Look up the qwen_speaker for *speaker* in the voice cast, falling back to the default."""
     profile = _voice_profiles.get(speaker) or _voice_profiles.get("default") or {}
     qwen_speaker = profile.get("qwen_speaker")
     if not qwen_speaker:
-        log.warning("No qwen_speaker set for speaker=%r — using default %r", speaker, QWEN_DEFAULT_SPEAKER)
+        log.warning("no qwen_speaker for speaker=%s -- using default=%s", speaker, QWEN_DEFAULT_SPEAKER)
         return QWEN_DEFAULT_SPEAKER
     return qwen_speaker
 
 
 def _build_instruct(speaker: str, emotion: str) -> str | None:
     """Combine the per-character qwen_instruct baseline with the emotion phrase.
-    Returns None when both are empty so the model uses its own default conditioning."""
+
+    Returns None when both are empty so the model uses its own default conditioning.
+    """
     profile = _voice_profiles.get(speaker) or _voice_profiles.get("default") or {}
     base = profile.get("qwen_instruct", "").strip()
     emotion_phrase = EMOTION_PHRASES.get(emotion, "").strip()
@@ -81,19 +94,29 @@ def _build_instruct(speaker: str, emotion: str) -> str | None:
     return base or emotion_phrase or None
 
 
+# ---------------------------------------------------------------------------
+# Model lifecycle
+# ---------------------------------------------------------------------------
+
+
 @app.on_event("startup")
 async def load_model():
     global tts_model
     _load_voice_cast()
-    log.info("Loading Qwen3-TTS model: %s", MODEL_ID)
+    log.info("loading model: model_id=%s", MODEL_ID)
     tts_model = Qwen3TTSModel.from_pretrained(
         MODEL_ID,
         device_map="cuda:0",
         dtype=torch.bfloat16,
-        # attn_implementation omitted — flash_attention_2 has no aarch64 wheel;
+        # attn_implementation omitted -- flash_attention_2 has no aarch64 wheel;
         # the model falls back to standard attention automatically.
     )
-    log.info("Qwen3-TTS model loaded")
+    log.info("model loaded: model_id=%s", MODEL_ID)
+
+
+# ---------------------------------------------------------------------------
+# Request schema
+# ---------------------------------------------------------------------------
 
 
 class SynthesizeRequest(BaseModel):
@@ -101,11 +124,41 @@ class SynthesizeRequest(BaseModel):
     segment_id: int = 0
     speaker: str = "default"
     engine: str = "qwen3-tts"         # accepted for contract parity; not used here
-    reference_audio_path: str = ""    # accepted but ignored — Qwen has no voice cloning
+    reference_audio_path: str = ""    # accepted but ignored -- Qwen has no voice cloning
     qwen_speaker: str = ""            # override: if set, skip voice-cast.yaml lookup
     emotion: str = "neutral"
     intensity: float = 0.5
-    speed: float = 1.0                # accepted but ignored — Qwen has no speed param
+    speed: float = 1.0                # accepted but ignored -- Qwen has no speed param
+
+
+# ---------------------------------------------------------------------------
+# Synthesis helpers
+# ---------------------------------------------------------------------------
+
+
+def _resolve_speaker_and_instruct(request: SynthesizeRequest) -> tuple[str, str | None]:
+    """Determine the Qwen speaker name and instruct string from the request."""
+    explicit = request.qwen_speaker.strip()
+    qwen_speaker = explicit if explicit else _resolve_qwen_speaker(request.speaker)
+    instruct = _build_instruct(request.speaker, request.emotion)
+    return qwen_speaker, instruct
+
+
+def _generate_audio(text: str, qwen_speaker: str, instruct: str | None, output_path: str) -> None:
+    """Run Qwen3-TTS inference and write the result to *output_path*."""
+    wavs, sr = tts_model.generate_custom_voice(
+        text=text,
+        language="English",
+        speaker=qwen_speaker,
+        instruct=instruct,
+    )
+    # generate_custom_voice returns a list of arrays; index 0 for single-text input.
+    sf.write(output_path, wavs[0], sr)
+
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
 
 
 @app.post("/synthesize")
@@ -116,32 +169,28 @@ async def synthesize(request: SynthesizeRequest):
     if not request.text or not request.text.strip():
         raise HTTPException(status_code=400, detail="text field is empty")
 
-    # Prefer explicit qwen_speaker from request (set by FE/n8n); fall back to voice-cast.yaml
-    qwen_speaker = request.qwen_speaker.strip() if request.qwen_speaker.strip() else _resolve_qwen_speaker(request.speaker)
-    instruct = _build_instruct(request.speaker, request.emotion)
+    qwen_speaker, instruct = _resolve_speaker_and_instruct(request)
 
     output_filename = f"seg{request.segment_id:04d}_{request.speaker}.wav"
     output_path = os.path.join(OUTPUT_DIR, output_filename)
 
     log.info(
-        "Synthesizing segment %d speaker=%s qwen_speaker=%s emotion=%s instruct=%r text=%.60s",
+        "request received: segment_id=%d speaker=%s qwen_speaker=%s emotion=%s instruct=%r text=%.60s",
         request.segment_id, request.speaker, qwen_speaker, request.emotion, instruct, request.text,
     )
 
+    start = time.monotonic()
     try:
-        wavs, sr = tts_model.generate_custom_voice(
-            text=request.text,
-            language="English",
-            speaker=qwen_speaker,
-            instruct=instruct,
-        )
-        # generate_custom_voice returns a list of arrays; index 0 for single-text input
-        sf.write(output_path, wavs[0], sr)
-    except Exception as e:
-        log.error("Qwen3-TTS generation failed for segment %d: %s", request.segment_id, e)
-        raise HTTPException(status_code=500, detail=f"TTS generation failed: {e}")
+        _generate_audio(request.text, qwen_speaker, instruct, output_path)
+    except Exception as exc:
+        log.error("synthesis failed: segment_id=%d error=%s", request.segment_id, exc)
+        raise HTTPException(status_code=500, detail=f"TTS generation failed: {exc}")
+    duration_s = time.monotonic() - start
 
-    log.info("Segment %d saved to %s", request.segment_id, output_path)
+    log.info(
+        "response sent: segment_id=%d speaker=%s file=%s duration=%.2fs",
+        request.segment_id, request.speaker, output_path, duration_s,
+    )
     return {
         "segment_id": request.segment_id,
         "speaker": request.speaker,

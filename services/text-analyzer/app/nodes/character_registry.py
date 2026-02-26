@@ -10,6 +10,7 @@ import logging
 import re
 from collections import Counter
 from ..models import Segment
+from ..timing import timed_node
 
 log = logging.getLogger(__name__)
 
@@ -17,6 +18,7 @@ _MALE_PATTERN = re.compile(r"\b(he|him|his)\b", re.IGNORECASE)
 _FEMALE_PATTERN = re.compile(r"\b(she|her|hers)\b", re.IGNORECASE)
 
 
+@timed_node("character_registry", "programmatic")
 def build_character_registry(segments: list[Segment]) -> list[dict]:
     """Collect unique character names from segments and return a list
     in the format expected by the API: ``[{"name": ..., "description": ...}]``.

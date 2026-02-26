@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from ..models import Segment
+from ..timing import timed_node
 
 log = logging.getLogger(__name__)
 
@@ -21,6 +22,7 @@ log = logging.getLogger(__name__)
 _NARRATION_GAP_RESET = 2
 
 
+@timed_node("turn_taking", "programmatic")
 def apply_turn_taking(segments: list[Segment]) -> list[Segment]:
     """Resolve remaining ``speaker="unknown"`` dialogue segments using
     turn-taking alternation.
@@ -43,16 +45,15 @@ def _resolve_pronouns(segments: list[Segment]) -> None:
     """If a segment has attribution_source='pronoun_male' or 'pronoun_female',
     and there is exactly one known character of that gender nearby, assign it.
     """
-    # Collect known speakers and their genders from explicit attributions.
+    # Single pass: collect known speakers, infer gender from adjacent narration,
+    # and record which segments need pronoun resolution.
     known_speakers: dict[str, str | None] = {}  # name → gender or None
-    for seg in segments:
+    pronoun_indices: list[int] = []
+
+    for i, seg in enumerate(segments):
         if seg.attribution_source == "explicit" and seg.speaker != "narrator":
             known_speakers.setdefault(seg.speaker, None)
-
-    # Infer gender from pronoun context in nearby segments.
-    for i, seg in enumerate(segments):
-        if seg.attribution_source == "explicit" and seg.speaker in known_speakers:
-            # Check adjacent narration for gender pronouns.
+            # Infer gender from adjacent narration.
             for j in (i - 1, i + 1):
                 if 0 <= j < len(segments) and segments[j].kind == "narration":
                     text_lower = segments[j].original_text.lower()
@@ -60,17 +61,19 @@ def _resolve_pronouns(segments: list[Segment]) -> None:
                         known_speakers[seg.speaker] = "male"
                     elif " she " in text_lower or " her " in text_lower or " hers " in text_lower:
                         known_speakers[seg.speaker] = "female"
+        elif seg.attribution_source.startswith("pronoun_"):
+            pronoun_indices.append(i)
 
-    # Now resolve pronoun segments.
-    for seg in segments:
-        if seg.attribution_source.startswith("pronoun_"):
-            gender = seg.attribution_source.split("_", 1)[1]
-            candidates = [name for name, g in known_speakers.items() if g == gender]
-            if len(candidates) == 1:
-                seg.speaker = candidates[0]
-                seg.attribution_source = "turn_taking"
-                log.debug("Pronoun resolved: segment %d → %s (only %s)",
-                          seg.id, candidates[0], gender)
+    # Resolve collected pronoun segments.
+    for i in pronoun_indices:
+        seg = segments[i]
+        gender = seg.attribution_source.split("_", 1)[1]
+        candidates = [name for name, g in known_speakers.items() if g == gender]
+        if len(candidates) == 1:
+            seg.speaker = candidates[0]
+            seg.attribution_source = "turn_taking"
+            log.debug("Pronoun resolved: segment %d → %s (only %s)",
+                      seg.id, candidates[0], gender)
 
 
 def _alternate_speakers(segments: list[Segment]) -> None:
@@ -80,7 +83,6 @@ def _alternate_speakers(segments: list[Segment]) -> None:
     narration_streak = 0
 
     for seg in segments:
-        # Track narration streaks to detect block boundaries.
         if seg.kind == "narration":
             narration_streak += 1
             if narration_streak >= _NARRATION_GAP_RESET:
@@ -89,24 +91,19 @@ def _alternate_speakers(segments: list[Segment]) -> None:
 
         narration_streak = 0
 
-        if seg.kind == "dialogue":
-            if seg.speaker not in ("unknown",) and seg.attribution_source != "none":
-                # Known speaker — add to conversation history.
-                if not conv_speakers or conv_speakers[-1] != seg.speaker:
-                    conv_speakers.append(seg.speaker)
-                continue
+        if seg.kind != "dialogue":
+            continue
 
-            # Unknown speaker — try to alternate.
-            if len(conv_speakers) >= 2:
-                last = conv_speakers[-1]
-                second_last = conv_speakers[-2]
-                # Alternate: assign the other speaker.
-                assigned = second_last if last == conv_speakers[-1] else last
-                seg.speaker = assigned
-                seg.attribution_source = "turn_taking"
-                conv_speakers.append(assigned)
-                log.debug("Turn-taking: segment %d → %s", seg.id, assigned)
-            elif len(conv_speakers) == 1:
-                # Only one known speaker — can't alternate.
-                # Leave as unknown for AI attribution.
-                pass
+        if seg.speaker != "unknown" and seg.attribution_source != "none":
+            # Known speaker — add to conversation history.
+            if not conv_speakers or conv_speakers[-1] != seg.speaker:
+                conv_speakers.append(seg.speaker)
+            continue
+
+        # Unknown speaker — alternate between the two most recent speakers.
+        if len(conv_speakers) >= 2:
+            assigned = conv_speakers[-2]
+            seg.speaker = assigned
+            seg.attribution_source = "turn_taking"
+            conv_speakers.append(assigned)
+            log.debug("Turn-taking: segment %d → %s", seg.id, assigned)

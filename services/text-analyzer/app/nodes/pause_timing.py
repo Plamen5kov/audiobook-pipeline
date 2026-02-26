@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from ..models import Segment
+from ..timing import timed_node
 
 log = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ PAUSE_NARRATION_AFTER_DIALOGUE = 600
 PAUSE_DIALOGUE_TURN = 500         # consecutive dialogue in same paragraph
 
 
+@timed_node("pause_timing", "programmatic")
 def assign_pauses(segments: list[Segment]) -> list[Segment]:
     """Set ``pause_before_ms`` on every segment based on its structural
     relationship to the previous segment.

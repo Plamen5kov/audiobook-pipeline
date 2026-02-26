@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 from ..models import Segment
+from ..timing import timed_node
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ _CLOSING_CONTEXT = set("abcdefghijklmnopqrstuvwxyz"
                        ".,!?;\u2026\u2019'")
 
 
+@timed_node("segment_splitter", "programmatic")
 def split_segments(text: str) -> list[Segment]:
     """Split *text* into an ordered list of Segment objects.
 

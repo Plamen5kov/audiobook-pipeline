@@ -29,6 +29,13 @@ STATIC_DIR = os.getenv("STATIC_DIR", "/static")
 N8N_URL    = os.getenv("N8N_URL", "http://n8n:5678")
 
 
+def _safe_filename(name: str) -> str:
+    """Validate a user-supplied filename, raising 400 on path traversal."""
+    if ".." in name or "/" in name:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    return name
+
+
 @app.get("/voices")
 async def list_voices():
     """List all WAV files available as reference voices."""
@@ -59,21 +66,17 @@ async def upload_voice(file: UploadFile = File(...)):
 @app.get("/voices/{filename}")
 async def get_voice(filename: str):
     """Serve a reference voice file (for in-browser preview)."""
-    if ".." in filename or "/" in filename:
-        raise HTTPException(status_code=400, detail="Invalid filename")
+    filename = _safe_filename(filename)
     path = os.path.join(VOICES_DIR, filename)
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail=f"Voice file not found: {filename}")
     return FileResponse(path, media_type="audio/wav", filename=filename)
 
 
-
-
 @app.get("/audio/{filename}")
 async def get_audio(filename: str, request: Request):
     """Serve a generated audiobook file with range-request support for browser seek/duration."""
-    if ".." in filename or "/" in filename:
-        raise HTTPException(status_code=400, detail="Invalid filename")
+    filename = _safe_filename(filename)
     path = os.path.join(OUTPUT_DIR, filename)
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail=f"Audio file not found: {filename}")
@@ -123,21 +126,29 @@ async def get_audio(filename: str, request: Request):
 @app.post("/status/{job_id}")
 async def write_status(job_id: str, request: Request):
     """Write a job status update (called by n8n workflows)."""
-    if ".." in job_id or "/" in job_id:
-        raise HTTPException(status_code=400, detail="Invalid job_id")
+    job_id = _safe_filename(job_id)
     data = await request.json()
     path = os.path.join(OUTPUT_DIR, f"status_{job_id}.json")
     async with aiofiles.open(path, "w") as f:
         await f.write(json.dumps(data))
     log.info("Status written: job_id=%s phase=%s status=%s", job_id, data.get("phase"), data.get("status"))
+
+    # Clean up status files from previous jobs.
+    current = f"status_{job_id}.json"
+    for f in os.listdir(OUTPUT_DIR):
+        if f.startswith("status_") and f.endswith(".json") and f != current:
+            try:
+                os.remove(os.path.join(OUTPUT_DIR, f))
+            except OSError:
+                pass
+
     return {"ok": True}
 
 
 @app.get("/status/{job_id}")
 async def read_status(job_id: str):
     """Read current job status (polled by the frontend)."""
-    if ".." in job_id or "/" in job_id:
-        raise HTTPException(status_code=400, detail="Invalid job_id")
+    job_id = _safe_filename(job_id)
     path = os.path.join(OUTPUT_DIR, f"status_{job_id}.json")
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="Job not found")
@@ -146,24 +157,28 @@ async def read_status(job_id: str):
     return json.loads(content)
 
 
+async def _proxy_to_n8n(webhook: str, body: bytes) -> JSONResponse:
+    """Forward a request body to an n8n webhook and return the response."""
+    url = f"{N8N_URL}/webhook/{webhook}"
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post(url, content=body, headers={"Content-Type": "application/json"})
+        return JSONResponse(content=r.json(), status_code=r.status_code)
+    except httpx.HTTPError as exc:
+        log.error("Proxy to %s failed: %s", url, exc)
+        raise HTTPException(status_code=502, detail=f"Upstream request failed: {exc}")
+
+
 @app.post("/api/analyze")
 async def proxy_analyze(request: Request):
     """Proxy POST to n8n /webhook/analyze — avoids CORS issues in the browser."""
-    body = await request.body()
-    async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.post(f"{N8N_URL}/webhook/analyze",
-                              content=body, headers={"Content-Type": "application/json"})
-    return JSONResponse(content=r.json(), status_code=r.status_code)
+    return await _proxy_to_n8n("analyze", await request.body())
 
 
 @app.post("/api/synthesize")
 async def proxy_synthesize(request: Request):
     """Proxy POST to n8n /webhook/synthesize — avoids CORS issues in the browser."""
-    body = await request.body()
-    async with httpx.AsyncClient(timeout=30) as client:
-        r = await client.post(f"{N8N_URL}/webhook/synthesize",
-                              content=body, headers={"Content-Type": "application/json"})
-    return JSONResponse(content=r.json(), status_code=r.status_code)
+    return await _proxy_to_n8n("synthesize", await request.body())
 
 
 @app.get("/health")

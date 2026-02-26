@@ -13,9 +13,9 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
-from typing import Optional
 
 from ..models import Segment
+from ..timing import timed_node
 
 log = logging.getLogger(__name__)
 
@@ -63,6 +63,7 @@ def _get_speech_verbs() -> set[str]:
     return _SPEECH_VERBS
 
 
+@timed_node("explicit_attribution", "programmatic")
 def attribute_explicit(segments: list[Segment]) -> list[Segment]:
     """Try to resolve each ``speaker="unknown"`` dialogue segment by
     scanning adjacent narration for speech-verb attribution patterns.
@@ -133,7 +134,7 @@ def attribute_explicit(segments: list[Segment]) -> list[Segment]:
 
 def _try_named_match(
     text: str, pattern: re.Pattern, group_idx: int
-) -> Optional[str]:
+) -> str | None:
     """Return the first valid character name matched by *pattern*, or None."""
     for m in pattern.finditer(text):
         candidate = m.group(group_idx).strip()
@@ -153,7 +154,7 @@ def _try_pronoun_match(
     text: str,
     pat_pronoun_verb: re.Pattern,
     pat_verb_pronoun: re.Pattern,
-) -> Optional[str]:
+) -> str | None:
     """Return the pronoun ("he"/"she") if a pronoun+verb pattern matches."""
     m = pat_pronoun_verb.search(text)
     if m:

@@ -10,9 +10,9 @@ import json
 import logging
 from pathlib import Path
 
-import httpx
-
 from ..models import ALLOWED_EMOTIONS, Segment
+from ..timing import timed_node
+from .ollama_client import call_ollama
 
 log = logging.getLogger(__name__)
 
@@ -23,6 +23,7 @@ _USER_TEMPLATE = (_PROMPTS_DIR / "emotion_user.txt").read_text().strip()
 _BATCH_SIZE = 30
 
 
+@timed_node("emotion_classifier", "ai")
 async def classify_emotions(
     segments: list[Segment],
     ollama_url: str,
@@ -62,7 +63,7 @@ async def classify_emotions(
         )
 
         try:
-            emotion_map = await _call_ollama(ollama_url, model_name, prompt)
+            emotion_map = await _request_emotions(ollama_url, model_name, prompt)
         except Exception:
             log.exception("Emotion classifier LLM call failed for batch starting at %d",
                           batch_start)
@@ -78,29 +79,14 @@ async def classify_emotions(
     return segments
 
 
-async def _call_ollama(
+async def _request_emotions(
     ollama_url: str, model_name: str, prompt: str
 ) -> dict[int, tuple[str, float]]:
     """Send a batched emotion classification request to Ollama.
 
-    Returns a dict mapping segment ID → (emotion, intensity).
+    Returns a dict mapping segment ID to (emotion, intensity).
     """
-    async with httpx.AsyncClient(timeout=None) as client:
-        resp = await client.post(
-            f"{ollama_url}/api/generate",
-            json={
-                "model": model_name,
-                "prompt": prompt,
-                "system": _SYSTEM_PROMPT,
-                "stream": False,
-                "format": "json",
-                "options": {"num_predict": -1},
-            },
-        )
-        resp.raise_for_status()
-
-    raw = resp.json().get("response", "")
-    parsed = json.loads(raw)
+    parsed = await call_ollama(ollama_url, model_name, _SYSTEM_PROMPT, prompt)
     emotions = parsed.get("emotions", [])
 
     result: dict[int, tuple[str, float]] = {}

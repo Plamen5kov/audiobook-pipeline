@@ -10,10 +10,12 @@ from __future__ import annotations
 import logging
 import re
 from ..models import Segment
+from ..timing import timed_node
 
 log = logging.getLogger(__name__)
 
 
+@timed_node("validation", "programmatic")
 def validate_completeness(
     segments: list[Segment], original_text: str
 ) -> tuple[bool, list[str]]:

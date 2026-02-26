@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+from collections import Counter
 from pathlib import Path
 
-import httpx
-
 from ..models import Segment
+from ..timing import timed_node
+from .ollama_client import call_ollama
 
 log = logging.getLogger(__name__)
 
@@ -28,6 +30,7 @@ _BATCH_SIZE = 20
 _CONTEXT_WINDOW = 3
 
 
+@timed_node("ai_attribution", "ai")
 async def resolve_ambiguous_speakers(
     segments: list[Segment],
     characters: list[dict],
@@ -89,10 +92,10 @@ async def resolve_ambiguous_speakers(
         )
 
         try:
-            attributions = await _call_ollama(ollama_url, model_name, prompt)
+            attributions = await _request_attributions(ollama_url, model_name, prompt)
         except Exception:
             log.exception("AI attribution LLM call failed")
-            attributions = {}
+            attributions = []
 
         # Apply attributions from this batch.
         attr_map = {a["segment_id"]: a["speaker"] for a in attributions}
@@ -110,26 +113,11 @@ async def resolve_ambiguous_speakers(
     return segments
 
 
-async def _call_ollama(
+async def _request_attributions(
     ollama_url: str, model_name: str, prompt: str
 ) -> list[dict]:
-    """Send a single LLM call and parse the attribution JSON response."""
-    async with httpx.AsyncClient(timeout=None) as client:
-        resp = await client.post(
-            f"{ollama_url}/api/generate",
-            json={
-                "model": model_name,
-                "prompt": prompt,
-                "system": _SYSTEM_PROMPT,
-                "stream": False,
-                "format": "json",
-                "options": {"num_predict": -1},
-            },
-        )
-        resp.raise_for_status()
-
-    raw = resp.json().get("response", "")
-    parsed = json.loads(raw)
+    """Send a single LLM call and return the ``attributions`` list."""
+    parsed = await call_ollama(ollama_url, model_name, _SYSTEM_PROMPT, prompt)
     return parsed.get("attributions", [])
 
 
@@ -148,9 +136,6 @@ def _fallback_last_speaker(segments: list[Segment]) -> None:
 def _extract_candidate_names(segments: list[Segment]) -> list[str]:
     """Extract likely character names from narration when no characters
     were found by the explicit attribution node."""
-    import re
-    from collections import Counter
-
     # Common words that get capitalised mid-sentence but aren't names.
     _COMMON = {
         "The", "There", "Their", "They", "These", "This", "That", "Those",

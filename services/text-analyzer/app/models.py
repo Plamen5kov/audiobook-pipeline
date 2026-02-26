@@ -33,13 +33,11 @@ class Segment:
 
 @dataclass
 class NodeMetrics:
-    """Timing and stats for one pipeline node."""
+    """Timing for one pipeline node."""
 
     node_name: str
     node_type: str  # "programmatic" | "ai"
     duration_ms: int = 0
-    segments_processed: int = 0
-    segments_affected: int = 0  # how many segments this node changed
 
 
 @dataclass

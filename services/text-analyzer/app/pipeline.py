@@ -1,15 +1,16 @@
 """Pipeline orchestrator.
 
-Runs the 8-node hybrid analysis pipeline in sequence, collecting
-per-node timing metrics into a structured report.
+Runs the 8-node hybrid analysis pipeline in sequence.  Timing is handled
+transparently by the ``@timed_node`` decorators on each node function —
+this module contains only business logic.
 """
 
 from __future__ import annotations
 
 import logging
-import time
 
-from .models import NodeMetrics, PipelineResult, Segment
+from .models import NodeMetrics, PipelineResult
+from .timing import collect_metrics
 from .nodes import (
     segment_splitter,
     explicit_attribution,
@@ -30,140 +31,24 @@ async def run_pipeline(
     ollama_url: str,
     model_name: str,
 ) -> PipelineResult:
-    """Run the full 8-node analysis pipeline and return structured results
-    with a per-node metrics report."""
+    """Run the full 8-node analysis pipeline and return structured results."""
 
-    metrics: list[NodeMetrics] = []
-    segments: list[Segment] = []
+    with collect_metrics() as metrics:
+        segments = segment_splitter.split_segments(text)
+        segments = explicit_attribution.attribute_explicit(segments)
+        segments = turn_taking.apply_turn_taking(segments)
+        characters = character_registry.build_character_registry(segments)
+        segments = pause_timing.assign_pauses(segments)
+        validation.validate_completeness(segments, text)
 
-    # ------------------------------------------------------------------
-    # Node 1 — Segment Splitter (programmatic)
-    # ------------------------------------------------------------------
-    t0 = time.monotonic_ns()
-    segments = segment_splitter.split_segments(text)
-    dt = (time.monotonic_ns() - t0) // 1_000_000
-    metrics.append(NodeMetrics(
-        "segment_splitter", "programmatic", dt,
-        segments_processed=len(segments),
-        segments_affected=len(segments),
-    ))
-    log.info("Node 1 (segment_splitter): %d segments in %d ms", len(segments), dt)
+        segments = await ai_attribution.resolve_ambiguous_speakers(
+            segments, characters, ollama_url, model_name,
+        )
+        segments = await emotion_classifier.classify_emotions(
+            segments, ollama_url, model_name,
+        )
 
-    # ------------------------------------------------------------------
-    # Node 2 — Explicit Attribution (programmatic)
-    # ------------------------------------------------------------------
-    t0 = time.monotonic_ns()
-    unknown_before = _count_unknown(segments)
-    segments = explicit_attribution.attribute_explicit(segments)
-    unknown_after = _count_unknown(segments)
-    dt = (time.monotonic_ns() - t0) // 1_000_000
-    resolved = unknown_before - unknown_after
-    metrics.append(NodeMetrics(
-        "explicit_attribution", "programmatic", dt,
-        segments_processed=len(segments),
-        segments_affected=resolved,
-    ))
-    log.info("Node 2 (explicit_attribution): resolved %d/%d in %d ms",
-             resolved, unknown_before, dt)
-
-    # ------------------------------------------------------------------
-    # Node 3 — Turn-Taking (programmatic)
-    # ------------------------------------------------------------------
-    t0 = time.monotonic_ns()
-    unknown_before = _count_unknown(segments)
-    segments = turn_taking.apply_turn_taking(segments)
-    unknown_after = _count_unknown(segments)
-    dt = (time.monotonic_ns() - t0) // 1_000_000
-    resolved = unknown_before - unknown_after
-    metrics.append(NodeMetrics(
-        "turn_taking", "programmatic", dt,
-        segments_processed=len(segments),
-        segments_affected=resolved,
-    ))
-    log.info("Node 3 (turn_taking): resolved %d/%d in %d ms",
-             resolved, unknown_before, dt)
-
-    # ------------------------------------------------------------------
-    # Node 4 — Character Registry (programmatic)
-    # ------------------------------------------------------------------
-    t0 = time.monotonic_ns()
-    characters = character_registry.build_character_registry(segments)
-    dt = (time.monotonic_ns() - t0) // 1_000_000
-    metrics.append(NodeMetrics(
-        "character_registry", "programmatic", dt,
-        segments_processed=len(segments),
-        segments_affected=len(characters),
-    ))
-    log.info("Node 4 (character_registry): %d characters in %d ms",
-             len(characters), dt)
-
-    # ------------------------------------------------------------------
-    # Node 5 — Pause/Timing (programmatic)
-    # ------------------------------------------------------------------
-    t0 = time.monotonic_ns()
-    segments = pause_timing.assign_pauses(segments)
-    dt = (time.monotonic_ns() - t0) // 1_000_000
-    metrics.append(NodeMetrics(
-        "pause_timing", "programmatic", dt,
-        segments_processed=len(segments),
-        segments_affected=len(segments),
-    ))
-    log.info("Node 5 (pause_timing): %d segments in %d ms", len(segments), dt)
-
-    # ------------------------------------------------------------------
-    # Node 6 — Validation (programmatic)
-    # ------------------------------------------------------------------
-    t0 = time.monotonic_ns()
-    passed, issues = validation.validate_completeness(segments, text)
-    dt = (time.monotonic_ns() - t0) // 1_000_000
-    metrics.append(NodeMetrics(
-        "validation", "programmatic", dt,
-        segments_processed=len(segments),
-        segments_affected=0 if passed else len(issues),
-    ))
-    log.info("Node 6 (validation): passed=%s issues=%d in %d ms",
-             passed, len(issues), dt)
-
-    # ------------------------------------------------------------------
-    # Node 7 — AI Attribution (ai)
-    # ------------------------------------------------------------------
-    t0 = time.monotonic_ns()
-    unknown_before = _count_unknown(segments)
-    segments = await ai_attribution.resolve_ambiguous_speakers(
-        segments, characters, ollama_url, model_name,
-    )
-    unknown_after = _count_unknown(segments)
-    dt = (time.monotonic_ns() - t0) // 1_000_000
-    resolved = unknown_before - unknown_after
-    metrics.append(NodeMetrics(
-        "ai_attribution", "ai", dt,
-        segments_processed=unknown_before,
-        segments_affected=resolved,
-    ))
-    log.info("Node 7 (ai_attribution): resolved %d/%d in %d ms",
-             resolved, unknown_before, dt)
-
-    # ------------------------------------------------------------------
-    # Node 8 — Emotion Classification (ai)
-    # ------------------------------------------------------------------
-    t0 = time.monotonic_ns()
-    segments = await emotion_classifier.classify_emotions(
-        segments, ollama_url, model_name,
-    )
-    dt = (time.monotonic_ns() - t0) // 1_000_000
-    non_neutral = sum(1 for s in segments if s.emotion != "neutral")
-    metrics.append(NodeMetrics(
-        "emotion_classifier", "ai", dt,
-        segments_processed=len(segments),
-        segments_affected=non_neutral,
-    ))
-    log.info("Node 8 (emotion_classifier): %d segments, %d non-neutral in %d ms",
-             len(segments), non_neutral, dt)
-
-    # ------------------------------------------------------------------
-    # Build output
-    # ------------------------------------------------------------------
-    # Post-processing overrides after emotion classifier.
+    # Post-processing overrides.
     for s in segments:
         if s.kind == "narration":
             s.emotion = "neutral"
@@ -185,7 +70,6 @@ async def run_pipeline(
 
     report = _build_report(metrics)
 
-    # Log summary.
     log.info(
         "Pipeline complete: %d segments, %d characters | "
         "total=%s (programmatic=%s, ai=%s)",
@@ -203,15 +87,8 @@ async def run_pipeline(
     )
 
 
-def _count_unknown(segments: list[Segment]) -> int:
-    return sum(1 for s in segments if s.kind == "dialogue" and s.speaker == "unknown")
-
-
 def _format_duration(ms: int) -> str:
-    """Format milliseconds as a human-readable duration.
-
-    Examples: ``"45ms"``, ``"3s"``, ``"59s"``, ``"1m 24s"``, ``"10m 4s"``
-    """
+    """Format milliseconds as a human-readable duration."""
     if ms < 1000:
         return f"{ms}ms"
     total_seconds = ms // 1000
@@ -241,8 +118,6 @@ def _build_report(metrics: list[NodeMetrics]) -> dict:
                 "type": m.node_type,
                 "duration_ms": m.duration_ms,
                 "duration": _format_duration(m.duration_ms),
-                "segments_processed": m.segments_processed,
-                "segments_affected": m.segments_affected,
             }
             for m in metrics
         ],

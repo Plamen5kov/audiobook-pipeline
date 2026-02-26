@@ -53,25 +53,18 @@ class AdaptResponse(BaseModel):
 
 @app.exception_handler(RequestValidationError)
 async def validation_error_handler(request: Request, exc: RequestValidationError):
-    body = await request.body()
+    body_text = (await request.body()).decode(errors="replace")
     log.error("422 validation error on %s %s", request.method, request.url.path)
-    log.error("Request body: %s", body.decode(errors="replace")[:2000])
+    log.error("Request body: %s", body_text[:2000])
     log.error("Validation errors: %s", exc.errors())
-    return JSONResponse(status_code=422, content={"detail": exc.errors(), "body_preview": body.decode(errors="replace")[:500]})
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body_preview": body_text[:500]},
+    )
 
 
-@app.post("/adapt", response_model=AdaptResponse)
-async def adapt_script(request: AdaptRequest):
-    log.info("POST /adapt — %d segments received", len(request.segments))
-    for seg in request.segments:
-        log.info("  segment %d: speaker=%s text=%.60s", seg.id, seg.speaker, seg.original_text)
-
-    segments_for_prompt = [
-        {"id": s.id, "speaker": s.speaker, "original_text": s.original_text}
-        for s in request.segments
-    ]
-    prompt = USER_PROMPT_TEMPLATE.format(segments_json=json.dumps(segments_for_prompt, indent=2))
-
+async def _call_ollama(prompt: str) -> str:
+    """Call Ollama and return the raw response text."""
     log.info("Calling Ollama model=%s", MODEL_NAME)
     async with httpx.AsyncClient(timeout=None) as client:
         try:
@@ -91,10 +84,13 @@ async def adapt_script(request: AdaptRequest):
             log.error("Ollama request failed: %s", e)
             raise HTTPException(status_code=502, detail=f"Ollama request failed: {e}")
 
-    result = response.json()
-    raw_text = result.get("response", "")
+    raw_text = response.json().get("response", "")
     log.info("Ollama responded (%d chars)", len(raw_text))
+    return raw_text
 
+
+def _parse_adapted_segments(raw_text: str) -> dict[int, str]:
+    """Parse LLM JSON response into {segment_id: spoken_text} lookup."""
     try:
         adapted_list = json.loads(raw_text)
     except json.JSONDecodeError:
@@ -104,14 +100,25 @@ async def adapt_script(request: AdaptRequest):
     if not isinstance(adapted_list, list):
         adapted_list = adapted_list.get("segments", []) if isinstance(adapted_list, dict) else []
 
-    # Build lookup from LLM response
-    spoken_lookup = {item["id"]: item["spoken_text"] for item in adapted_list if isinstance(item, dict)}
+    return {item["id"]: item["spoken_text"] for item in adapted_list if isinstance(item, dict)}
+
+
+@app.post("/adapt", response_model=AdaptResponse)
+async def adapt_script(request: AdaptRequest):
+    log.info("POST /adapt — %d segments received", len(request.segments))
+
+    segments_for_prompt = [
+        {"id": s.id, "speaker": s.speaker, "original_text": s.original_text}
+        for s in request.segments
+    ]
+    prompt = USER_PROMPT_TEMPLATE.format(segments_json=json.dumps(segments_for_prompt, indent=2))
+
+    raw_text = await _call_ollama(prompt)
+    spoken_lookup = _parse_adapted_segments(raw_text)
     log.info("spoken_lookup has %d entries", len(spoken_lookup))
 
-    # Merge spoken_text back into original segments
-    output_segments = []
-    for seg in request.segments:
-        output_segments.append(AdaptedSegment(
+    output_segments = [
+        AdaptedSegment(
             id=seg.id,
             speaker=seg.speaker,
             original_text=seg.original_text,
@@ -119,7 +126,9 @@ async def adapt_script(request: AdaptRequest):
             emotion=seg.emotion,
             intensity=seg.intensity,
             pause_before_ms=seg.pause_before_ms,
-        ))
+        )
+        for seg in request.segments
+    ]
 
     log.info("Returning %d adapted segments", len(output_segments))
     return AdaptResponse(segments=output_segments)
