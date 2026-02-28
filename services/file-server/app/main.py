@@ -196,6 +196,33 @@ async def proxy_synthesize(request: Request):
     return await _proxy_to_n8n("synthesize", await request.body())
 
 
+async def _proxy_to_service(url: str, body: bytes, timeout: float) -> JSONResponse:
+    """Forward a request body to an internal service and return the JSON response."""
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            r = await client.post(url, content=body, headers={"Content-Type": "application/json"})
+        return JSONResponse(content=r.json(), status_code=r.status_code)
+    except httpx.HTTPError as exc:
+        log.error("Proxy to %s failed: %s", url, exc)
+        raise HTTPException(status_code=502, detail=f"Upstream request failed: {exc}")
+
+
+@app.post("/api/re-synthesize")
+async def re_synthesize(request: Request):
+    """Proxy a single-segment re-synthesis request to tts-router."""
+    return await _proxy_to_service(
+        "http://tts-router:8010/synthesize", await request.body(), timeout=1200.0,
+    )
+
+
+@app.post("/api/re-stitch")
+async def re_stitch(request: Request):
+    """Proxy a re-assembly request to audio-assembly."""
+    return await _proxy_to_service(
+        "http://audio-assembly:8005/assemble", await request.body(), timeout=120.0,
+    )
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}

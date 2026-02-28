@@ -88,6 +88,24 @@ export class ProxyController {
     const { data } = await this.proxy.forwardJson('POST', '/api/synthesize', body);
     return data;
   }
+
+  // ── Post-production ─────────────────────────────────────────
+
+  @Post('api/re-synthesize')
+  @HttpCode(HttpStatus.OK)
+  async reSynthesize(@Req() req: Request) {
+    const body = await readBody(req);
+    const { data } = await this.proxy.forwardJson('POST', '/api/re-synthesize', body);
+    return data;
+  }
+
+  @Post('api/re-stitch')
+  @HttpCode(HttpStatus.OK)
+  async reStitch(@Req() req: Request) {
+    const body = await readBody(req);
+    const { data } = await this.proxy.forwardJson('POST', '/api/re-stitch', body);
+    return data;
+  }
 }
 
 /** Collect the raw request body as a Buffer. */

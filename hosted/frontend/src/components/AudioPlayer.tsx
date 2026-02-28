@@ -2,10 +2,12 @@ import { audioUrl } from '../api';
 
 interface Props {
   filename: string;
+  version?: number;
 }
 
-export function AudioPlayer({ filename }: Props) {
-  const src = audioUrl(filename);
+export function AudioPlayer({ filename, version }: Props) {
+  const base = audioUrl(filename);
+  const src = version ? `${base}?v=${version}` : base;
 
   const handleDownload = async () => {
     const res = await fetch(src);
@@ -23,7 +25,7 @@ export function AudioPlayer({ filename }: Props) {
   return (
     <div className="card">
       <h2>Your Audiobook</h2>
-      <audio className="audio-player" controls preload="metadata" src={src} />
+      <audio key={src} className="audio-player" controls preload="metadata" src={src} />
       <button className="download-btn" onClick={handleDownload}>
         ↓ Download WAV
       </button>

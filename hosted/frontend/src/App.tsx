@@ -1,9 +1,10 @@
 import { useState, useRef, useCallback } from 'react';
-import { analyzeText, fetchVoices, pollStatus, startSynthesis, Voice, Segment, StatusResponse, NodeStatus } from './api';
+import { analyzeText, fetchVoices, pollStatus, startSynthesis, Voice, Segment, StatusResponse, NodeStatus, ClipInfo } from './api';
 import { AnalyzeForm } from './components/AnalyzeForm';
 import { StatusProgress, PhaseState } from './components/StatusProgress';
 import { VoiceCast } from './components/VoiceCast';
 import { AudioPlayer } from './components/AudioPlayer';
+import { PostProduction } from './components/PostProduction';
 import ServiceHealth from './components/ServiceHealth';
 import { PipelineMap } from './components/PipelineMap';
 
@@ -37,6 +38,10 @@ export default function App() {
   const [outputFile, setOutputFile]   = useState<string>('');
   const [nodes, setNodes]             = useState<Record<string, NodeStatus> | undefined>(undefined);
   const [activeJobId, setActiveJobId] = useState<string>('');
+  const [clips, setClips]             = useState<ClipInfo[]>([]);
+  const [voiceMapping, setVoiceMapping]   = useState<Record<string, string>>({});
+  const [engineMapping, setEngineMapping] = useState<Record<string, string>>({});
+  const [audioVersion, setAudioVersion]   = useState(0);
 
   const jobIdRef   = useRef<string>('');
   const pollRef    = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -107,6 +112,9 @@ export default function App() {
       updatePhase('assembling', 'done', 'Audiobook ready');
       stopPolling();
       setOutputFile(output_file ?? '');
+      if (status.clips) setClips(status.clips);
+      if (status.voice_mapping) setVoiceMapping(status.voice_mapping);
+      if (status.engine_mapping) setEngineMapping(status.engine_mapping);
       setPhase('done');
     }
   }, [updatePhase, stopPolling]);
@@ -175,6 +183,10 @@ export default function App() {
     // Reuse the same job ID so the pipeline map stays continuous from analyze → synthesize
     const jobId = jobIdRef.current;
 
+    // Capture mappings early so PostProduction has them even if status doesn't include them
+    setVoiceMapping(voiceMapping);
+    setEngineMapping(engineMapping);
+
     try {
       await startSynthesis(editedSegments, voiceMapping, engineMapping, jobId, skipScriptAdapter);
     } catch (e: unknown) {
@@ -225,7 +237,20 @@ export default function App() {
       )}
 
       {showResult && outputFile && (
-        <AudioPlayer filename={outputFile} />
+        <AudioPlayer filename={outputFile} version={audioVersion} />
+      )}
+
+      {showResult && clips.length > 0 && (
+        <PostProduction
+          segments={segments}
+          clips={clips}
+          voiceMapping={voiceMapping}
+          engineMapping={engineMapping}
+          voices={voices}
+          outputFile={outputFile}
+          onClipsChange={setClips}
+          onOutputFileChange={(f: string) => { setOutputFile(f); setAudioVersion((v: number) => v + 1); }}
+        />
       )}
     </>
   );

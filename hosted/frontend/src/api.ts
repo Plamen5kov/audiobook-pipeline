@@ -25,6 +25,12 @@ export interface NodeStatus {
   total?: number;
 }
 
+export interface ClipInfo {
+  id: number;
+  file_path: string;
+  pause_before_ms: number;
+}
+
 export interface StatusResponse {
   phase: 'analyzing' | 'synthesizing' | 'done';
   status: 'running' | 'done' | 'error';
@@ -34,6 +40,9 @@ export interface StatusResponse {
   output_file?: string;
   error?: string;
   nodes?: Record<string, NodeStatus>;
+  clips?: ClipInfo[];
+  voice_mapping?: Record<string, string>;
+  engine_mapping?: Record<string, string>;
 }
 
 export interface ServiceStatus {
@@ -97,4 +106,59 @@ export function voiceUrl(engine: string, filename: string): string {
 
 export function audioUrl(filename: string): string {
   return `${BASE}/audio/${filename}`;
+}
+
+// ── Post-production ───────────────────────────────────────────
+
+export interface ReSynthesizeRequest {
+  text: string;
+  segment_id: number;
+  speaker: string;
+  engine: string;
+  reference_audio_path: string;
+  qwen_speaker: string;
+  emotion: string;
+  intensity: number;
+  speed: number;
+}
+
+export interface ReSynthesizeResponse {
+  segment_id: number;
+  speaker: string;
+  file_path: string;
+  filename: string;
+}
+
+export async function reSynthesize(params: ReSynthesizeRequest): Promise<ReSynthesizeResponse> {
+  const res = await fetch(`${BASE}/api/re-synthesize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error(`Re-synthesize error: ${res.status}`);
+  return res.json();
+}
+
+export interface ReStitchRequest {
+  clips: ClipInfo[];
+  output_filename: string;
+  crossfade_ms?: number;
+  normalize?: boolean;
+}
+
+export interface ReStitchResponse {
+  file_path: string;
+  filename: string;
+  duration_ms: number;
+  clips_count: number;
+}
+
+export async function reStitch(params: ReStitchRequest): Promise<ReStitchResponse> {
+  const res = await fetch(`${BASE}/api/re-stitch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error(`Re-stitch error: ${res.status}`);
+  return res.json();
 }
