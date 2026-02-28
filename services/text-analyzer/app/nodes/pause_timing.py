@@ -14,11 +14,11 @@ log = logging.getLogger(__name__)
 
 # Pause durations in milliseconds.
 PAUSE_FIRST = 0
-PAUSE_SCENE_BREAK = 2000          # blank line between paragraphs
-PAUSE_PARAGRAPH_BREAK = 1000      # new paragraph (narrator → narrator)
-PAUSE_DIALOGUE_AFTER_NARRATION = 700
-PAUSE_NARRATION_AFTER_DIALOGUE = 600
-PAUSE_DIALOGUE_TURN = 500         # consecutive dialogue in same paragraph
+PAUSE_SCENE_BREAK = 1000          # blank line between paragraphs
+PAUSE_PARAGRAPH_BREAK = 500       # new paragraph (narrator → narrator)
+PAUSE_DIALOGUE_AFTER_NARRATION = 350
+PAUSE_NARRATION_AFTER_DIALOGUE = 300
+PAUSE_DIALOGUE_TURN = 250         # consecutive dialogue in same paragraph
 
 
 @timed_node("pause_timing", "programmatic")
