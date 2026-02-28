@@ -56,6 +56,7 @@ export function PostProduction({
   const [segStates, setSegStates] = useState<Record<number, SegState>>(() =>
     buildInitial(segments, voiceMapping, engineMapping),
   );
+  const [page, setPage] = useState(0);
   const [stitching, setStitching] = useState(false);
   const [stitchMsg, setStitchMsg] = useState('');
 
@@ -70,6 +71,8 @@ export function PostProduction({
     }));
   }, []);
 
+  const PAGE_SIZE = 5;
+
   const filtered = segments.filter(s => {
     if (!search) return true;
     const q = search.toLowerCase();
@@ -77,6 +80,10 @@ export function PostProduction({
       ? s.original_text.toLowerCase().includes(q)
       : s.speaker.toLowerCase().includes(q);
   });
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages - 1);
+  const paged = filtered.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
 
   const modifiedIds = Object.entries(segStates)
     .filter(([, s]) => s.status === 'modified')
@@ -156,7 +163,7 @@ export function PostProduction({
           className="pp-search"
           placeholder={searchBy === 'content' ? 'Search by content...' : 'Search by character...'}
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={e => { setSearch(e.target.value); setPage(0); }}
         />
         <div className="pp-search-mode">
           <label className="pp-radio">
@@ -164,7 +171,7 @@ export function PostProduction({
               type="radio"
               name="searchBy"
               checked={searchBy === 'content'}
-              onChange={() => setSearchBy('content')}
+              onChange={() => { setSearchBy('content'); setPage(0); }}
             />
             Content
           </label>
@@ -173,7 +180,7 @@ export function PostProduction({
               type="radio"
               name="searchBy"
               checked={searchBy === 'character'}
-              onChange={() => setSearchBy('character')}
+              onChange={() => { setSearchBy('character'); setPage(0); }}
             />
             Character
           </label>
@@ -181,7 +188,7 @@ export function PostProduction({
       </div>
 
       <div className="pp-list">
-        {filtered.map(seg => {
+        {paged.map(seg => {
           const st = segStates[seg.id];
           if (!st) return null;
           const isQwen = st.engine === 'qwen3-tts';
@@ -303,6 +310,28 @@ export function PostProduction({
           <div className="pp-empty">No segments match your search.</div>
         )}
       </div>
+
+      {totalPages > 1 && (
+        <div className="pp-pager">
+          <button
+            className="pp-pager-btn"
+            disabled={safePage === 0}
+            onClick={() => setPage(safePage - 1)}
+          >
+            Prev
+          </button>
+          <span className="pp-pager-info">
+            {safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, filtered.length)} of {filtered.length}
+          </span>
+          <button
+            className="pp-pager-btn"
+            disabled={safePage >= totalPages - 1}
+            onClick={() => setPage(safePage + 1)}
+          >
+            Next
+          </button>
+        </div>
+      )}
 
       <div className="pp-actions">
         {modifiedIds.length > 0 && (

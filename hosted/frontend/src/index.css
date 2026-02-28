@@ -676,9 +676,6 @@ details[open] > .segments-editor-summary::before {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: 600px;
-  overflow-y: auto;
-  padding-right: 4px;
 }
 
 .pp-seg {
@@ -807,6 +804,33 @@ details[open] > .segments-editor-summary::before {
   color: var(--text-dim);
   font-size: 0.85rem;
   padding: 24px 0;
+}
+
+.pp-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.pp-pager-btn {
+  padding: 4px 12px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.pp-pager-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+.pp-pager-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.pp-pager-info {
+  font-size: 0.78rem;
+  color: var(--text-dim);
 }
 
 .pp-actions {

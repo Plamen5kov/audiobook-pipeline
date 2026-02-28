@@ -1,5 +1,7 @@
 import logging
 import os
+import subprocess
+import tempfile
 import time
 from pathlib import Path
 
@@ -128,7 +130,7 @@ class SynthesizeRequest(BaseModel):
     qwen_speaker: str = ""            # override: if set, skip voice-cast.yaml lookup
     emotion: str = "neutral"
     intensity: float = 0.5
-    speed: float = 1.0                # accepted but ignored -- Qwen has no speed param
+    speed: float = 1.0                # applied as post-processing resampling
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +146,7 @@ def _resolve_speaker_and_instruct(request: SynthesizeRequest) -> tuple[str, str 
     return qwen_speaker, instruct
 
 
-def _generate_audio(text: str, qwen_speaker: str, instruct: str | None, output_path: str) -> None:
+def _generate_audio(text: str, qwen_speaker: str, instruct: str | None, output_path: str, speed: float = 1.0) -> None:
     """Run Qwen3-TTS inference and write the result to *output_path*."""
     wavs, sr = tts_model.generate_custom_voice(
         text=text,
@@ -153,7 +155,45 @@ def _generate_audio(text: str, qwen_speaker: str, instruct: str | None, output_p
         instruct=instruct,
     )
     # generate_custom_voice returns a list of arrays; index 0 for single-text input.
-    sf.write(output_path, wavs[0], sr)
+    audio = wavs[0]
+    sf.write(output_path, audio, sr)
+
+    # Apply tempo change via ffmpeg atempo filter (preserves pitch).
+    if speed != 1.0 and 0.25 <= speed <= 4.0:
+        _apply_atempo(output_path, speed)
+
+
+def _apply_atempo(file_path: str, speed: float) -> None:
+    """Use ffmpeg atempo filter to change tempo without pitch shift.
+
+    ffmpeg's atempo accepts values in [0.5, 100.0]. For speeds below 0.5 we
+    chain multiple atempo filters (each >=0.5).
+    """
+    # Build atempo filter chain — each filter limited to [0.5, 100.0].
+    filters: list[str] = []
+    remaining = speed
+    while remaining < 0.5:
+        filters.append("atempo=0.5")
+        remaining /= 0.5
+    filters.append(f"atempo={remaining}")
+    af = ",".join(filters)
+
+    with tempfile.NamedTemporaryFile(suffix=".wav", dir=os.path.dirname(file_path), delete=False) as tmp:
+        tmp_path = tmp.name
+
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", file_path, "-filter:a", af, tmp_path],
+            check=True,
+            capture_output=True,
+        )
+        os.replace(tmp_path, file_path)
+    except subprocess.CalledProcessError as exc:
+        log.error("ffmpeg atempo failed: %s", exc.stderr.decode(errors="replace"))
+        # Clean up temp file; original file is untouched.
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +221,7 @@ async def synthesize(request: SynthesizeRequest):
 
     start = time.monotonic()
     try:
-        _generate_audio(request.text, qwen_speaker, instruct, output_path)
+        _generate_audio(request.text, qwen_speaker, instruct, output_path, request.speed)
     except Exception as exc:
         log.error("synthesis failed: segment_id=%d error=%s", request.segment_id, exc)
         raise HTTPException(status_code=500, detail=f"TTS generation failed: {exc}")
