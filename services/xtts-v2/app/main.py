@@ -42,11 +42,11 @@ tts_model: TTS | None = None
 
 # Hardcoded voice cast used when the request does not supply reference_audio_path.
 VOICE_CAST = {
-    "narrator": "/voices/narrator.wav",
-    "Elena":    "/voices/elena.wav",
-    "Marcus":   "/voices/marcus.wav",
+    "narrator": "/voices/xtts/narrator.wav",
+    "Elena":    "/voices/xtts/elena.wav",
+    "Marcus":   "/voices/xtts/marcus.wav",
 }
-DEFAULT_VOICE = "/voices/generic_neutral.wav"
+DEFAULT_VOICE = "/voices/xtts/generic_neutral.wav"
 
 
 # ---------------------------------------------------------------------------

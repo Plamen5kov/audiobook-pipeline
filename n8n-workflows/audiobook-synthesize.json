@@ -82,7 +82,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const body = $('Webhook').first().json.body || {};\nconst voiceMapping = body.voice_mapping || {};\nconst engineMapping = body.engine_mapping || {};\n\nreturn $input.all().map(item => {\n  const segment = item.json;\n  const speaker = segment.speaker || 'default';\n  const engine = engineMapping[speaker] || 'xtts-v2';\n  const voiceValue = voiceMapping[speaker] || '';\n  const referenceAudioPath = engine !== 'qwen3-tts' ? `/voices/${voiceValue || 'generic_neutral.wav'}` : '';\n  const qwenSpeaker = engine === 'qwen3-tts' ? (voiceValue || '') : '';\n  return { json: { ...segment, reference_audio_path: referenceAudioPath, engine, qwen_speaker: qwenSpeaker } };\n});"
+        "jsCode": "const body = $('Webhook').first().json.body || {};\nconst voiceMapping = body.voice_mapping || {};\nconst engineMapping = body.engine_mapping || {};\n\nreturn $input.all().map(item => {\n  const segment = item.json;\n  const speaker = segment.speaker || 'default';\n  const engine = engineMapping[speaker] || 'xtts-v2';\n  const voiceValue = voiceMapping[speaker] || '';\n  const referenceAudioPath = engine !== 'qwen3-tts' ? `/voices/xtts/${voiceValue || 'generic_neutral.wav'}` : '';\n  const qwenSpeaker = engine === 'qwen3-tts' ? (voiceValue || '') : '';\n  return { json: { ...segment, reference_audio_path: referenceAudioPath, engine, qwen_speaker: qwenSpeaker } };\n});"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,

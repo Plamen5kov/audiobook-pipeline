@@ -19,21 +19,21 @@ export class ProxyController {
 
   // ── Voices ────────────────────────────────────────────────────
 
-  @Get('voices')
-  async listVoices() {
-    const { data } = await this.proxy.forwardJson('GET', '/voices');
+  @Get('voices/:engine')
+  async listVoices(@Param('engine') engine: string) {
+    const { data } = await this.proxy.forwardJson('GET', `/voices/${engine}`);
     return data;
   }
 
-  @Post('voices/upload')
+  @Post('voices/upload/:engine')
   @UseInterceptors(FileInterceptor('file', { storage: undefined })) // memory storage
-  async uploadVoice(@UploadedFile() file: Express.Multer.File) {
-    return this.proxy.forwardUpload(file);
+  async uploadVoice(@Param('engine') engine: string, @UploadedFile() file: Express.Multer.File) {
+    return this.proxy.forwardUpload(file, engine);
   }
 
-  @Get('voices/:filename')
-  async getVoice(@Param('filename') filename: string, @Req() req: Request, @Res() res: Response): Promise<void> {
-    const { stream, status, headers } = await this.proxy.streamAudio(`/voices/${filename}`, req.headers['range'] as string | undefined);
+  @Get('voices/:engine/:filename')
+  async getVoice(@Param('engine') engine: string, @Param('filename') filename: string, @Req() req: Request, @Res() res: Response): Promise<void> {
+    const { stream, status, headers } = await this.proxy.streamAudio(`/voices/${engine}/${filename}`, req.headers['range'] as string | undefined);
     res.status(status).set({ 'Content-Type': 'audio/wav', ...headers });
     stream.pipe(res);
   }

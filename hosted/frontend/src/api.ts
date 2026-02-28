@@ -48,8 +48,8 @@ export async function getServicesHealth(): Promise<ServiceStatus[]> {
   return res.json();
 }
 
-export async function fetchVoices(): Promise<Voice[]> {
-  const res = await fetch(`${BASE}/voices`);
+export async function fetchVoices(engine: string): Promise<Voice[]> {
+  const res = await fetch(`${BASE}/voices/${engine}`);
   if (!res.ok) throw new Error(`Failed to fetch voices: ${res.status}`);
   return res.json();
 }
@@ -91,8 +91,8 @@ export async function startSynthesis(
   if (!res.ok) throw new Error(`Synthesize error: ${res.status}`);
 }
 
-export function voiceUrl(filename: string): string {
-  return `${BASE}/voices/${filename}`;
+export function voiceUrl(engine: string, filename: string): string {
+  return `${BASE}/voices/${engine}/${filename}`;
 }
 
 export function audioUrl(filename: string): string {

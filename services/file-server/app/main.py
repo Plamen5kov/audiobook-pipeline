@@ -36,24 +36,38 @@ def _safe_filename(name: str) -> str:
     return name
 
 
-@app.get("/voices")
-async def list_voices():
-    """List all WAV files available as reference voices."""
+VALID_ENGINES = {"xtts", "qwen3"}
+
+
+def _engine_dir(engine: str) -> str:
+    """Return the subdirectory for a given engine, raising 400 on invalid values."""
+    if engine not in VALID_ENGINES:
+        raise HTTPException(status_code=400, detail=f"Invalid engine: {engine}")
+    return os.path.join(VOICES_DIR, engine)
+
+
+@app.get("/voices/{engine}")
+async def list_voices(engine: str):
+    """List all WAV files available for a given engine."""
+    engine_path = _engine_dir(engine)
     try:
-        files = sorted(f for f in os.listdir(VOICES_DIR) if f.endswith(".wav"))
+        files = sorted(f for f in os.listdir(engine_path) if f.endswith(".wav"))
     except FileNotFoundError:
         return []
     return [{"name": f[:-4], "filename": f} for f in files]
 
 
-@app.post("/voices/upload")
-async def upload_voice(file: UploadFile = File(...)):
+@app.post("/voices/upload/{engine}")
+async def upload_voice(engine: str, file: UploadFile = File(...)):
     """Upload a WAV file to use as a reference voice."""
+    engine_path = _engine_dir(engine)
+    os.makedirs(engine_path, exist_ok=True)
+
     if not file.filename or not file.filename.lower().endswith(".wav"):
         raise HTTPException(status_code=400, detail="Only .wav files are accepted")
 
     safe_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", os.path.splitext(file.filename)[0])
-    dest = os.path.join(VOICES_DIR, f"{safe_name}.wav")
+    dest = os.path.join(engine_path, f"{safe_name}.wav")
 
     async with aiofiles.open(dest, "wb") as out:
         content = await file.read()
@@ -63,13 +77,14 @@ async def upload_voice(file: UploadFile = File(...)):
     return {"name": safe_name, "filename": f"{safe_name}.wav"}
 
 
-@app.get("/voices/{filename}")
-async def get_voice(filename: str):
+@app.get("/voices/{engine}/{filename}")
+async def get_voice(engine: str, filename: str):
     """Serve a reference voice file (for in-browser preview)."""
+    engine_path = _engine_dir(engine)
     filename = _safe_filename(filename)
-    path = os.path.join(VOICES_DIR, filename)
+    path = os.path.join(engine_path, filename)
     if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail=f"Voice file not found: {filename}")
+        raise HTTPException(status_code=404, detail=f"Voice file not found: {engine}/{filename}")
     return FileResponse(path, media_type="audio/wav", filename=filename)
 
 

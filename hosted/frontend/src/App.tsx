@@ -139,7 +139,7 @@ export default function App() {
 
     const [analyzeResult, fetchedVoices] = await Promise.allSettled([
       analyzeText(title, text, jobId),
-      fetchVoices(),
+      fetchVoices('xtts'),
     ]);
 
     if (fetchedVoices.status === 'fulfilled') {

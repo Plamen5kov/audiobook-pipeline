@@ -50,16 +50,17 @@ export function VoiceCast({ segments, voices, onGenerate, disabled = false }: Pr
     setJsonError(null);
   }, [segments]);
 
-  const togglePreview = useCallback((filename: string) => {
+  const togglePreview = useCallback((engine: string, filename: string) => {
+    const key = `${engine}/${filename}`;
     const audio = audioRef.current;
-    if (playing === filename && !audio.paused) {
+    if (playing === key && !audio.paused) {
       audio.pause();
       setPlaying(null);
     } else {
       audio.pause();
-      audio.src = voiceUrl(filename);
+      audio.src = voiceUrl(engine, filename);
       audio.play().catch(() => {});
-      setPlaying(filename);
+      setPlaying(key);
       audio.onended = () => setPlaying(null);
     }
   }, [playing]);
@@ -138,19 +139,28 @@ export function VoiceCast({ segments, voices, onGenerate, disabled = false }: Pr
               {isQwen
                 ? QWEN_VOICES.map(v => {
                     const isSelected = selected[speaker] === v;
+                    const qwenFile = `${v}.wav`;
+                    const isPlaying = playing === `qwen3/${qwenFile}`;
                     return (
                       <div
                         key={v}
-                        className={`voice-chip qwen-chip${isSelected ? ' selected' : ''}`}
+                        className={`voice-chip qwen-chip${isSelected ? ' selected' : ''}${isPlaying ? ' playing' : ''}`}
                         onClick={() => setSelected(prev => ({ ...prev, [speaker]: v }))}
                       >
+                        <button
+                          className="chip-play"
+                          title={`Preview ${v}`}
+                          onClick={e => { e.stopPropagation(); togglePreview('qwen3', qwenFile); }}
+                        >
+                          {isPlaying ? '⏹' : '▶'}
+                        </button>
                         <span className="chip-name">{v.replace(/_/g, '\u00a0')}</span>
                       </div>
                     );
                   })
                 : displayVoices.map(v => {
                     const isSelected = selected[speaker] === v.filename;
-                    const isPlaying  = playing === v.filename;
+                    const isPlaying  = playing === `xtts/${v.filename}`;
                     return (
                       <div
                         key={v.filename}
@@ -160,7 +170,7 @@ export function VoiceCast({ segments, voices, onGenerate, disabled = false }: Pr
                         <button
                           className="chip-play"
                           title={`Preview ${v.name}`}
-                          onClick={e => { e.stopPropagation(); togglePreview(v.filename); }}
+                          onClick={e => { e.stopPropagation(); togglePreview('xtts', v.filename); }}
                         >
                           {isPlaying ? '⏹' : '▶'}
                         </button>

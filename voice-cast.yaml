@@ -22,7 +22,7 @@ voices:
   narrator:
     tts_service: xtts-v2
     tts_port: 8003
-    reference_audio: /voices/narrator.wav
+    reference_audio: /voices/xtts/narrator.wav
     speed: 0.95
     style_notes: calm, measured, storytelling tone
     qwen_speaker: Serena
@@ -31,7 +31,7 @@ voices:
   Elena:
     tts_service: xtts-v2
     tts_port: 8003
-    reference_audio: /voices/elena.wav
+    reference_audio: /voices/xtts/elena.wav
     speed: 1.0
     style_notes: young, curious, energetic
     qwen_speaker: Vivian
@@ -40,7 +40,7 @@ voices:
   Marcus:
     tts_service: xtts-v2
     tts_port: 8003
-    reference_audio: /voices/marcus.wav
+    reference_audio: /voices/xtts/marcus.wav
     speed: 1.0
     style_notes: cautious, guarded
     qwen_speaker: Dylan
@@ -49,7 +49,7 @@ voices:
   default:
     tts_service: xtts-v2
     tts_port: 8003
-    reference_audio: /voices/generic_neutral.wav
+    reference_audio: /voices/xtts/generic_neutral.wav
     speed: 1.0
     style_notes: neutral
     qwen_speaker: Ryan

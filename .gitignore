@@ -9,9 +9,9 @@ venv/
 # Audio files
 output/
 data/intermediate/
-voices/*.wav
-voices/*.mp3
-voices/*.flac
+voices/**/*.wav
+voices/**/*.mp3
+voices/**/*.flac
 
 # n8n persistence
 n8n-data/

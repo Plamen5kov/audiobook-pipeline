@@ -60,12 +60,12 @@ export class ProxyService {
   }
 
   /** Forward a multipart file upload to DGX. */
-  async forwardUpload(file: Express.Multer.File): Promise<unknown> {
+  async forwardUpload(file: Express.Multer.File, engine: string): Promise<unknown> {
     const form = new FormData();
     form.append('file', file.buffer, { filename: file.originalname, contentType: file.mimetype });
 
     try {
-      const res = await axios.post(`${this.dgxUrl}/voices/upload`, form, {
+      const res = await axios.post(`${this.dgxUrl}/voices/upload/${engine}`, form, {
         headers: form.getHeaders(),
         timeout: 0,
       });
