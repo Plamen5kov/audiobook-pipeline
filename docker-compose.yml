@@ -9,7 +9,7 @@ services:
       - OLLAMA_CONTEXT_LENGTH=16384
       - OLLAMA_KEEP_ALIVE=-1
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/"]
+      test: ["CMD", "ollama", "list"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -31,7 +31,7 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434
       - MODEL_NAME=qwen2.5:7b
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -49,7 +49,7 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434
       - MODEL_NAME=qwen2.5:7b
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -71,7 +71,7 @@ services:
     environment:
       - COQUI_TOS_AGREED=1
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -99,7 +99,7 @@ services:
       - TTS_BACKENDS={"xtts-v2":"http://xtts-v2:8003","qwen3-tts":"http://qwen3-tts:8007"}
       - DEFAULT_ENGINE=xtts-v2
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8010/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8010/health')"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -115,7 +115,7 @@ services:
       - ./voice-cast.yaml:/voice-cast.yaml:ro
       - qwen3-models:/root/.cache/huggingface
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8007/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8007/health')"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -141,7 +141,7 @@ services:
       - ./data/intermediate:/data/intermediate:ro
       - ./output:/output
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8005/health')"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -157,7 +157,7 @@ services:
       - ./output:/output
       - ./data/intermediate:/data/intermediate
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
       interval: 30s
       timeout: 5s
       retries: 3

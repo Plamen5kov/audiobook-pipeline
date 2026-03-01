@@ -4,5 +4,5 @@ pydantic==2.9.0
 PyYAML==6.0.2
 soundfile==0.12.1
 numpy==1.26.4
-qwen-tts==0.2.1
+qwen-tts>=0.1.1
 # torch and torchaudio are installed separately in the Dockerfile with the CUDA index
