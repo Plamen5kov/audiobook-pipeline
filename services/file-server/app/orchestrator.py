@@ -42,8 +42,10 @@ async def _write_status(job_id: str, data: dict) -> None:
         await f.write(json.dumps(data))
     log.info("status: job_id=%s phase=%s status=%s", job_id, data.get("phase"), data.get("status"))
 
-    # Clean up status files from previous jobs.
-    current = f"status_{job_id}.json"
+
+def _cleanup_old_status(current_job_id: str) -> None:
+    """Remove status files from previous jobs (called once at the start of a new pipeline run)."""
+    current = f"status_{current_job_id}.json"
     for fname in os.listdir(OUTPUT_DIR):
         if fname.startswith("status_") and fname.endswith(".json") and fname != current:
             try:
@@ -67,6 +69,7 @@ async def run_analyze(
     text: str,
 ) -> None:
     """Call text-analyzer and write status updates."""
+    _cleanup_old_status(job_id)
     started = _now()
 
     try:

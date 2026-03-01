@@ -196,16 +196,6 @@ async def write_status(job_id: str, request: Request):
     async with aiofiles.open(path, "w") as f:
         await f.write(json.dumps(data))
     log.info("Status written: job_id=%s phase=%s status=%s", job_id, data.get("phase"), data.get("status"))
-
-    # Clean up status files from previous jobs.
-    current = f"status_{job_id}.json"
-    for f in os.listdir(OUTPUT_DIR):
-        if f.startswith("status_") and f.endswith(".json") and f != current:
-            try:
-                os.remove(os.path.join(OUTPUT_DIR, f))
-            except OSError:
-                pass
-
     return {"ok": True}
 
 
@@ -221,6 +211,18 @@ async def read_status(job_id: str):
     return json.loads(content)
 
 
+_active_job: dict[str, str] = {}  # {"job_id": ..., "phase": ...} or empty
+
+
+async def _run_and_clear(coro, job_id: str):
+    """Run a pipeline coroutine and clear the active-job lock when it finishes."""
+    try:
+        await coro
+    finally:
+        if _active_job.get("job_id") == job_id:
+            _active_job.clear()
+
+
 @app.post("/api/analyze")
 async def api_analyze(request: Request):
     """Start the analysis pipeline as a background task."""
@@ -232,8 +234,15 @@ async def api_analyze(request: Request):
     if not job_id:
         raise HTTPException(status_code=400, detail="job_id is required")
 
+    if _active_job:
+        raise HTTPException(
+            status_code=409,
+            detail=f"A job is already running ({_active_job.get('phase', 'unknown')}). Wait for it to finish.",
+        )
+
+    _active_job.update({"job_id": job_id, "phase": "analyzing"})
     client: httpx.AsyncClient = request.app.state.http_client
-    asyncio.create_task(run_analyze(client, job_id, title, text))
+    asyncio.create_task(_run_and_clear(run_analyze(client, job_id, title, text), job_id))
     return JSONResponse({"status": "analyzing", "job_id": job_id})
 
 
@@ -249,9 +258,17 @@ async def api_synthesize(request: Request):
     if not job_id:
         raise HTTPException(status_code=400, detail="job_id is required")
 
+    # Allow synthesize for the same job that just finished analyzing.
+    if _active_job and _active_job.get("job_id") != job_id:
+        raise HTTPException(
+            status_code=409,
+            detail=f"A different job is already running ({_active_job.get('phase', 'unknown')}). Wait for it to finish.",
+        )
+
+    _active_job.update({"job_id": job_id, "phase": "synthesizing"})
     client: httpx.AsyncClient = request.app.state.http_client
-    asyncio.create_task(run_synthesize(
-        client, job_id, segments, voice_mapping, engine_mapping,
+    asyncio.create_task(_run_and_clear(
+        run_synthesize(client, job_id, segments, voice_mapping, engine_mapping), job_id,
     ))
     return JSONResponse({"status": "synthesizing", "job_id": job_id})
 
