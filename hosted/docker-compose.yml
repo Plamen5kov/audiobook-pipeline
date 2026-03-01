@@ -12,7 +12,7 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://localhost:3001}
+        VITE_BACKEND_URL: ${VITE_BACKEND_URL-http://localhost:3001}
     ports:
       - "${FRONTEND_PORT:-4000}:80"
     restart: unless-stopped

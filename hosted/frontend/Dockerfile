@@ -2,7 +2,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Configurable backend URL — set via docker-compose build arg
-ARG VITE_BACKEND_URL=http://localhost:3001
+ARG VITE_BACKEND_URL=""
 ENV VITE_BACKEND_URL=${VITE_BACKEND_URL}
 
 # Install ImageMagick for icon generation
@@ -22,7 +22,5 @@ RUN npm run build
 
 FROM nginx:alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
-# Minimal config: serve SPA, let host nginx handle routing and proxying
-RUN printf 'events{}\nhttp{\n  include mime.types;\n  server{\n    listen 80;\n    root /usr/share/nginx/html;\n    location / { try_files $uri /index.html; }\n  }\n}' \
-      > /etc/nginx/nginx.conf
+COPY nginx.conf /etc/nginx/nginx.conf
 EXPOSE 80
