@@ -83,14 +83,14 @@ async def test_run_analyze_error():
 
 
 @pytest.mark.asyncio
-async def test_run_synthesize_skip_adapter():
+async def test_run_synthesize_success():
     transport = MockTransport({
         "/synthesize": {
             "json": {
                 "segment_id": 1,
                 "speaker": "narrator",
-                "file_path": "/data/intermediate/seg0001_narrator.wav",
-                "filename": "seg0001_narrator.wav",
+                "file_path": "/data/intermediate/seg0001.wav",
+                "filename": "seg0001.wav",
             }
         },
         "/assemble": {
@@ -107,7 +107,7 @@ async def test_run_synthesize_skip_adapter():
     voice_mapping = {"narrator": "narrator.wav"}
     engine_mapping = {"narrator": "xtts-v2"}
 
-    await run_synthesize(client, "test-job-synth", segments, voice_mapping, engine_mapping, skip_script_adapter=True)
+    await run_synthesize(client, "test-job-synth", segments, voice_mapping, engine_mapping)
 
     status = _read_status("test-job-synth")
     assert status["phase"] == "done"

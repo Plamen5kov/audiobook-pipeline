@@ -245,14 +245,13 @@ async def api_synthesize(request: Request):
     segments = body.get("segments", [])
     voice_mapping = body.get("voice_mapping", {})
     engine_mapping = body.get("engine_mapping", {})
-    skip_script_adapter = body.get("skip_script_adapter", False)
 
     if not job_id:
         raise HTTPException(status_code=400, detail="job_id is required")
 
     client: httpx.AsyncClient = request.app.state.http_client
     asyncio.create_task(run_synthesize(
-        client, job_id, segments, voice_mapping, engine_mapping, skip_script_adapter,
+        client, job_id, segments, voice_mapping, engine_mapping,
     ))
     return JSONResponse({"status": "synthesizing", "job_id": job_id})
 
@@ -291,7 +290,6 @@ async def health():
 
 _PIPELINE_SERVICES = {
     "text-analyzer":  "http://text-analyzer:8001/health",
-    "script-adapter": "http://script-adapter:8002/health",
     "xtts-v2":        "http://xtts-v2:8003/health",
     "tts-router":     "http://tts-router:8010/health",
     "qwen3-tts":      "http://qwen3-tts:8007/health",

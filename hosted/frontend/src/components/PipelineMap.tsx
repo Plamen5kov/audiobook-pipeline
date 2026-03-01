@@ -3,11 +3,10 @@ import { NodeStatus } from '../api';
 import { formatDuration } from '../utils/formatDuration';
 import './PipelineMap.css';
 
-const NODE_ORDER = ['text-analyzer', 'script-adapter', 'tts-router', 'audio-assembly'] as const;
+const NODE_ORDER = ['text-analyzer', 'tts-router', 'audio-assembly'] as const;
 
 const NODE_LABELS: Record<string, string> = {
   'text-analyzer':  'text-analyzer',
-  'script-adapter': 'script-adapter',
   'tts-router':     'tts-router',
   'audio-assembly': 'audio-assembly',
 };
@@ -69,7 +68,7 @@ export function PipelineMap({ nodes, jobId }: Props) {
     <div className="pipeline-map">
       {jobId && <span className="pipeline-job-id">Job: {jobId.slice(0, 8)}</span>}
       <div className="pipeline-row">
-        {NODE_ORDER.map((name, i) => (
+        {NODE_ORDER.map((name) => (
           <span key={name} className="pipeline-item">
             <NodeBlock name={name} node={nodes[name]} now={now} />
           </span>

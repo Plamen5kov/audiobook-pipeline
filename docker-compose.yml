@@ -41,24 +41,6 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  script-adapter:
-    build: ./services/script-adapter
-    ports:
-      - "8002:8002"
-    environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - MODEL_NAME=qwen2.5:7b
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-    depends_on:
-      ollama:
-        condition: service_healthy
-    restart: unless-stopped
-
   xtts-v2:
     build: ./services/xtts-v2
     ports:

@@ -153,7 +153,6 @@ export function usePipeline() {
   const handleGenerate = useCallback(async (
     voiceMap: Record<string, string>,
     engineMap: Record<string, string>,
-    skipScriptAdapter: boolean,
     editedSegments: Segment[],
   ) => {
     stopPolling();
@@ -172,7 +171,7 @@ export function usePipeline() {
     setEngineMapping(engineMap);
 
     try {
-      await startSynthesis(editedSegments, voiceMap, engineMap, jobId, skipScriptAdapter);
+      await startSynthesis(editedSegments, voiceMap, engineMap, jobId);
     } catch (e: unknown) {
       setError('Failed to start synthesis: ' + formatError(e));
       setPhase('voice-cast');

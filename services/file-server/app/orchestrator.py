@@ -27,7 +27,6 @@ TTS_CONCURRENCY = int(os.getenv("TTS_CONCURRENCY", "3"))
 
 # Internal service URLs.
 TEXT_ANALYZER_URL = os.getenv("TEXT_ANALYZER_URL", "http://text-analyzer:8001")
-SCRIPT_ADAPTER_URL = os.getenv("SCRIPT_ADAPTER_URL", "http://script-adapter:8002")
 TTS_ROUTER_URL = os.getenv("TTS_ROUTER_URL", "http://tts-router:8010")
 AUDIO_ASSEMBLY_URL = os.getenv("AUDIO_ASSEMBLY_URL", "http://audio-assembly:8005")
 
@@ -129,15 +128,14 @@ async def run_synthesize(
     segments: list[dict[str, Any]],
     voice_mapping: dict[str, str],
     engine_mapping: dict[str, str],
-    skip_script_adapter: bool = False,
 ) -> None:
-    """Run script-adapter → parallel TTS → audio-assembly, writing status
-    updates at each stage so the frontend can show live progress."""
+    """Run parallel TTS → audio-assembly, writing status updates at each
+    stage so the frontend can show live progress."""
     total = len(segments)
-    sr_started = _now()
+    tts_started = _now()
 
     try:
-        # ── Status: synthesizing → running (script-adapter) ────────
+        # ── Status: synthesizing → running (tts-router) ───────────
         await _write_status(job_id, {
             "phase": "synthesizing",
             "status": "running",
@@ -145,37 +143,6 @@ async def run_synthesize(
             "total": total,
             "nodes": {
                 "text-analyzer": {"status": "done"},
-                "script-adapter": {"status": "running", "started": sr_started},
-                "tts-router": {"status": "pending"},
-                "audio-assembly": {"status": "pending"},
-            },
-        })
-
-        # ── Script adapter ─────────────────────────────────────────
-        if skip_script_adapter:
-            adapted = [
-                {**seg, "spoken_text": seg["original_text"]}
-                for seg in segments
-            ]
-        else:
-            resp = await client.post(
-                f"{SCRIPT_ADAPTER_URL}/adapt",
-                json={"segments": segments},
-            )
-            resp.raise_for_status()
-            adapted = resp.json().get("segments", [])
-
-        tts_started = _now()
-
-        # ── Status: script-adapter done, tts-router starting ──────
-        await _write_status(job_id, {
-            "phase": "synthesizing",
-            "status": "running",
-            "job_id": job_id,
-            "total": total,
-            "nodes": {
-                "text-analyzer": {"status": "done"},
-                "script-adapter": {"status": "done", "started": sr_started, "finished": tts_started},
                 "tts-router": {"status": "running", "started": tts_started, "completed": 0, "total": total},
                 "audio-assembly": {"status": "pending"},
             },
@@ -183,7 +150,7 @@ async def run_synthesize(
 
         # ── Apply voice mapping ────────────────────────────────────
         tts_requests: list[dict[str, Any]] = []
-        for seg in adapted:
+        for seg in segments:
             speaker = seg.get("speaker", "default")
             engine = engine_mapping.get(speaker, "xtts-v2")
             voice_value = voice_mapping.get(speaker, "")
@@ -197,7 +164,7 @@ async def run_synthesize(
             tts_requests.append({
                 "segment_id": seg["id"],
                 "speaker": speaker,
-                "text": seg.get("spoken_text", seg.get("original_text", "")),
+                "text": seg.get("original_text", ""),
                 "reference_audio_path": reference_audio_path,
                 "engine": engine,
                 "qwen_speaker": qwen_speaker,
@@ -229,7 +196,6 @@ async def run_synthesize(
                     "total": total,
                     "nodes": {
                         "text-analyzer": {"status": "done"},
-                        "script-adapter": {"status": "done", "started": sr_started, "finished": tts_started},
                         "tts-router": {
                             "status": "running",
                             "started": tts_started,
@@ -253,7 +219,6 @@ async def run_synthesize(
             "job_id": job_id,
             "nodes": {
                 "text-analyzer": {"status": "done"},
-                "script-adapter": {"status": "done", "started": sr_started, "finished": tts_started},
                 "tts-router": {"status": "done", "total": total, "started": tts_started, "finished": aa_started},
                 "audio-assembly": {"status": "running", "started": aa_started},
             },
@@ -261,7 +226,7 @@ async def run_synthesize(
 
         # ── Prepare assembly request ───────────────────────────────
         pause_map: dict[int, int] = {
-            seg["id"]: seg.get("pause_before_ms", 0) for seg in adapted
+            seg["id"]: seg.get("pause_before_ms", 0) for seg in segments
         }
         clips = [
             {
@@ -299,7 +264,6 @@ async def run_synthesize(
             "engine_mapping": engine_mapping,
             "nodes": {
                 "text-analyzer": {"status": "done"},
-                "script-adapter": {"status": "done", "started": sr_started, "finished": tts_started},
                 "tts-router": {"status": "done", "started": tts_started, "finished": aa_started},
                 "audio-assembly": {"status": "done", "started": aa_started, "finished": aa_finished},
             },
@@ -319,7 +283,6 @@ async def run_synthesize(
             "error": str(exc),
             "nodes": {
                 "text-analyzer": {"status": "done"},
-                "script-adapter": {"status": "error"},
                 "tts-router": {"status": "error"},
                 "audio-assembly": {"status": "error"},
             },

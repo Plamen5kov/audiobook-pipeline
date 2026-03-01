@@ -1,3 +1,0 @@
-Adapt these segments for spoken delivery:
-
-{segments_json}

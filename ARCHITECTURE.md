@@ -32,14 +32,14 @@ Turn a book chapter (plain text) into a full audiobook with **distinct voices pe
                                │     :8080         │
                                └────────┬──────────┘
                                         │ async HTTP calls
-        ┌───────────┬──────────┬────────┴──────────┬───────────┐
-        ▼           ▼          ▼                   ▼           ▼
-   ┌─────────┐ ┌─────────┐ ┌──────────┐    ┌─────────┐ ┌─────────┐
-   │  Text   │ │ Script  │ │TTS Router│    │ Audio   │ │   QA    │
-   │Analyzer │ │Adapter  │ │  :8010   │    │Assembly │ │Verifier │
-   │ :8001   │ │ :8002   │ └────┬─────┘    │ :8005   │ │ :8006   │
-   └─────────┘ └─────────┘      │          └─────────┘ └─────────┘
-      LLM         LLM      ┌────┴────┐      ffmpeg     Whisper
+        ┌───────────┬────────┴──────────┬───────────┐
+        ▼           ▼                   ▼           ▼
+   ┌─────────┐ ┌──────────┐    ┌─────────┐ ┌─────────┐
+   │  Text   │ │TTS Router│    │ Audio   │ │   QA    │
+   │Analyzer │ │  :8010   │    │Assembly │ │Verifier │
+   │ :8001   │ └────┬─────┘    │ :8005   │ │ :8006   │
+   └─────────┘      │          └─────────┘ └─────────┘
+      LLM      ┌────┴────┐      ffmpeg     Whisper
                             ▼        ▼
                        ┌──────┐ ┌──────────┐  ┌─────────────┐
                        │XTTS  │ │ Qwen3-   │  │ <future>    │
@@ -152,35 +152,7 @@ services/text-analyzer/app/
 
 The `report` field is a backward-compatible addition — downstream services ignore it.
 
-### Stage 2: Script Adapter (LLM)
-
-**Purpose:** Rewrite text for optimal spoken delivery.
-
-- **Input:** Segments JSON from Stage 1
-- **Output:** Same JSON with added `spoken_text` field per segment
-- **Model:** Same Ollama instance as Stage 1
-- **Transformations:**
-  - Strip dialogue attribution ("she whispered", "he said angrily") — emotion comes from TTS parameters, not spoken words
-  - Expand abbreviations ("Dr." → "Doctor", "St." → "Street" or "Saint" based on context)
-  - Convert numbers to words ("42" → "forty-two")
-  - Adjust punctuation for natural pauses (add commas, ellipses where speech would pause)
-  - Handle internal monologue differently from spoken dialogue
-
-**After this stage, segment 2 from above becomes:**
-
-```json
-{
-  "id": 2,
-  "speaker": "Elena",
-  "original_text": "\"Is anyone there?\" she whispered.",
-  "spoken_text": "Is anyone there?",
-  "emotion": "fearful",
-  "intensity": 0.7,
-  "pause_before_ms": 300
-}
-```
-
-### Stage 3: Voice Casting (Configuration)
+### Stage 2: Voice Casting (Configuration)
 
 **Not an AI stage** — `voice-cast.yaml` maps characters to TTS engines and voice profiles.
 The `tts_service` field is the live routing key: the orchestrator reads it at synthesis time
@@ -220,7 +192,7 @@ voices:
 - **To switch a character to a different TTS engine:** change `tts_service` (and `tts_port`). That's it — no code changes anywhere.
 - Each TTS engine reads its own fields (`reference_audio` for xtts-v2, `qwen_speaker`/`qwen_instruct` for qwen3-tts) and ignores the rest.
 
-### Stage 4: TTS Synthesis
+### Stage 3: TTS Synthesis
 
 **Purpose:** Generate audio for each segment.
 
@@ -275,7 +247,7 @@ POST /synthesize
 - **Kokoro** — lightweight and fast for bulk generation
 - **Piper** — very fast, lower quality, good for drafts/previews
 
-### Stage 5: Audio Assembly
+### Stage 4: Audio Assembly
 
 **Purpose:** Combine individual segment audio clips into a complete chapter.
 
@@ -297,7 +269,7 @@ POST /synthesize
 Lives in `services/file-server/app/orchestrator.py`. Two async entry points:
 
 - **`run_analyze(client, job_id, title, text)`** — calls text-analyzer, writes status updates
-- **`run_synthesize(client, job_id, segments, voice_mapping, engine_mapping, ...)`** — calls script-adapter → parallel TTS → audio-assembly, writes status updates at each stage
+- **`run_synthesize(client, job_id, segments, voice_mapping, engine_mapping)`** — runs parallel TTS → audio-assembly, writes status updates at each stage
 
 The file-server's `/api/analyze` and `/api/synthesize` endpoints launch these as background tasks
 (`asyncio.create_task`) and return the `job_id` immediately. The frontend polls `/api/status/{job_id}`
@@ -370,7 +342,6 @@ The `hosted/` directory contains the user-facing web application:
 |------------------|-------|-----|-------------------------------------|
 | ollama           | 11435 | Yes | Shared LLM backend (host port 11435 → internal 11434) |
 | text-analyzer    | 8001  | No  | Hybrid pipeline: 6 programmatic nodes + 2 AI nodes (Ollama) |
-| script-adapter   | 8002  | No  | FastAPI, calls Ollama               |
 | xtts-v2          | 8003  | Yes | FastAPI + XTTS v2 (voice cloning)   |
 | qwen3-tts        | 8007  | Yes | FastAPI + Qwen3-TTS-12Hz-1.7B (predefined voices + instruct) |
 | tts-router       | 8010  | No  | HTTP proxy — routes /synthesize to correct TTS backend |
@@ -378,8 +349,8 @@ The `hosted/` directory contains the user-facing web application:
 | qa-verifier      | 8006  | Yes | FastAPI + Whisper (Phase 2)         |
 | file-server      | 8080  | No  | Pipeline orchestrator, file serving, status API |
 
-All services have Docker healthchecks. Services that depend on model loading (text-analyzer,
-script-adapter) use `depends_on: condition: service_healthy` on ollama. GPU services (xtts-v2,
+All services have Docker healthchecks. Services that depend on model loading (text-analyzer)
+use `depends_on: condition: service_healthy` on ollama. GPU services (xtts-v2,
 qwen3-tts) have a 120s `start_period` to allow model loading.
 
 ### Shared Volumes
@@ -394,7 +365,7 @@ qwen3-tts) have a 120s `start_period` to allow model loading.
 | Variable | Default | Service(s) | Description |
 |----------|---------|------------|-------------|
 | `LOG_LEVEL` | `INFO` | All Python services | Python logging level |
-| `OLLAMA_TIMEOUT_S` | `300` | text-analyzer, script-adapter | Timeout for Ollama LLM calls (seconds) |
+| `OLLAMA_TIMEOUT_S` | `300` | text-analyzer | Timeout for Ollama LLM calls (seconds) |
 | `TTS_CONCURRENCY` | `3` | file-server | Max parallel TTS synthesis requests |
 | `TTS_BACKENDS` | (JSON) | tts-router | Engine→URL map for TTS routing |
 | `DEFAULT_ENGINE` | `xtts-v2` | tts-router | Fallback TTS engine |
@@ -411,7 +382,6 @@ qwen3-tts) have a 120s `start_period` to allow model loading.
 **Includes:**
 - File-server orchestrator driving the pipeline
 - Text Analyzer service (hybrid pipeline: deterministic parsing + targeted Ollama calls)
-- Script Adapter service (same Ollama)
 - One TTS service: XTTS v2
 - Audio Assembly service
 - Voice cast config (YAML)
@@ -464,7 +434,7 @@ qwen3-tts) have a 120s `start_period` to allow model loading.
 | 2026-02-17 | XTTS v2 as MVP TTS engine              | Battle-tested, good cloning, large community                 |
 | 2026-02-17 | English only for MVP                    | Reduces complexity, most TTS models handle English best      |
 | 2026-02-17 | One TTS for MVP, multi-TTS later        | Get end-to-end working first, then expand                    |
-| 2026-02-17 | Shared Ollama instance for LLM stages   | Both text-analyzer and script-adapter use the same model type|
+| 2026-02-17 | Shared Ollama instance for LLM stages   | Text-analyzer uses Ollama for AI attribution and emotion classification |
 | 2026-02-24 | TTS Router as single entry point         | Orchestrator calls tts-router:8010; router dispatches by `engine` field; adding future engines = zero code changes |
 | 2026-02-24 | `engine` field in SynthesizeRequest     | Explicit routing key preferred over implicit speaker→YAML lookup in router; caller owns the routing decision |
 | 2026-02-24 | Qwen3-TTS as second TTS engine          | Predefined voices + instruction-based emotion control; good complement to XTTS v2's voice-cloning approach |

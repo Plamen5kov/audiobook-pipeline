@@ -7,7 +7,7 @@ import './VoiceCast.css';
 interface Props {
   segments: Segment[];
   voices: Voice[];
-  onGenerate: (voiceMapping: Record<string, string>, engineMapping: Record<string, string>, skipScriptAdapter: boolean, segments: Segment[]) => void;
+  onGenerate: (voiceMapping: Record<string, string>, engineMapping: Record<string, string>, segments: Segment[]) => void;
   disabled?: boolean;
 }
 
@@ -34,7 +34,6 @@ export function VoiceCast({ segments, voices, onGenerate, disabled = false }: Pr
     return init;
   });
 
-  const [skipAdapter, setSkipAdapter] = useState(true);
   const [editJson, setEditJson]       = useState(() => JSON.stringify(segments, null, 2));
   const [jsonError, setJsonError]     = useState<string | null>(null);
   const { playing, togglePreview, stopPreview } = useAudioPreview();
@@ -79,7 +78,7 @@ export function VoiceCast({ segments, voices, onGenerate, disabled = false }: Pr
       const parsed = JSON.parse(editJson);
       if (Array.isArray(parsed)) parsedSegments = parsed as Segment[];
     } catch { /* blocked by jsonError check above */ }
-    onGenerate(selected, engines, skipAdapter, parsedSegments);
+    onGenerate(selected, engines, parsedSegments);
   }
 
   return (
@@ -182,18 +181,6 @@ export function VoiceCast({ segments, voices, onGenerate, disabled = false }: Pr
       </details>
 
       <div className="cast-actions">
-        <label className="toggle-label">
-          <span className="toggle-text">Script rewriting</span>
-          <span className="toggle-switch">
-            <input
-              type="checkbox"
-              checked={!skipAdapter}
-              onChange={e => setSkipAdapter(!e.target.checked)}
-              disabled={disabled}
-            />
-            <span className="toggle-slider" />
-          </span>
-        </label>
         <button className="btn-primary" onClick={handleGenerate} disabled={disabled || !!jsonError}>
           {disabled ? 'Synthesizing\u2026' : 'Generate Audiobook'}
         </button>

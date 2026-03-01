@@ -14,12 +14,11 @@ The pipeline is orchestrated by the **file-server** (`services/file-server/app/o
 
 - **file-server** (:8080) — Pipeline orchestrator, file serving, status API
 - **text-analyzer** (:8001) — Hybrid pipeline parses text into structured segments with speaker/emotion metadata
-- **script-adapter** (:8002) — LLM rewrites text for spoken delivery
 - **tts-router** (:8010) — Routes TTS requests to the correct engine by `engine` field
 - **xtts-v2** (:8003) — TTS synthesis using Coqui XTTS v2
 - **qwen3-tts** (:8007) — TTS synthesis using Qwen3-TTS (predefined voices + instruct)
 - **audio-assembly** (:8005) — Combines clips into final audiobook (ffmpeg/pydub)
-- **ollama** (:11434) — Shared LLM backend for text-analyzer and script-adapter
+- **ollama** (:11434) — Shared LLM backend for text-analyzer
 - **NestJS backend** (hosted/backend) — API gateway proxying React frontend to file-server
 
 ## Commands

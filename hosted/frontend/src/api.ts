@@ -101,7 +101,6 @@ export async function startSynthesis(
   voiceMapping: Record<string, string>,
   engineMapping: Record<string, string>,
   jobId: string,
-  skipScriptAdapter: boolean,
 ): Promise<void> {
   await requestVoid(`${BASE}/api/synthesize`, {
     method: 'POST',
@@ -111,7 +110,6 @@ export async function startSynthesis(
       voice_mapping: voiceMapping,
       engine_mapping: engineMapping,
       job_id: jobId,
-      skip_script_adapter: skipScriptAdapter,
     }),
   });
 }
