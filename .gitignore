@@ -13,9 +13,6 @@ voices/**/*.wav
 voices/**/*.mp3
 voices/**/*.flac
 
-# n8n persistence
-n8n-data/
-
 # Environment
 .env
 *.env.local

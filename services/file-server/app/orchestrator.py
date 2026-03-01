@@ -1,4 +1,4 @@
-"""Pipeline orchestrator — replaces both n8n workflows.
+"""Pipeline orchestrator.
 
 Two async functions drive the pipeline end-to-end, writing status
 updates directly via the write_status helper so the frontend can poll

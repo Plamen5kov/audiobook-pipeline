@@ -292,7 +292,7 @@ POST /synthesize
 
 ### Pipeline Orchestrator (file-server)
 
-**Purpose:** Drive the entire pipeline, replacing the former n8n workflows.
+**Purpose:** Drive the entire pipeline end-to-end.
 
 Lives in `services/file-server/app/orchestrator.py`. Two async entry points:
 
@@ -409,7 +409,7 @@ qwen3-tts) have a 120s `start_period` to allow model loading.
 **Goal:** End-to-end pipeline that takes a chapter and produces an audiobook file with multiple character voices.
 
 **Includes:**
-- File-server orchestrator driving the pipeline (replaced n8n)
+- File-server orchestrator driving the pipeline
 - Text Analyzer service (hybrid pipeline: deterministic parsing + targeted Ollama calls)
 - Script Adapter service (same Ollama)
 - One TTS service: XTTS v2
