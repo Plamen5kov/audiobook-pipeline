@@ -24,6 +24,10 @@ n8n-data/
 .DS_Store
 Thumbs.db
 
+# Build artifacts
+dist/
+node_modules/
+
 # IDE
 .vscode/
 .idea/

@@ -1,22 +1,4 @@
 services:
-  n8n:
-    image: n8nio/n8n:latest
-    ports:
-      - "5678:5678"
-    volumes:
-      - ./n8n-data:/home/node/.n8n
-      - ./voices:/voices:ro
-      - ./input:/input:ro
-      - ./output:/output
-      - ./data:/data
-      - ./voice-cast.yaml:/voice-cast.yaml:ro
-    environment:
-      - N8N_SECURE_COOKIE=false
-      - N8N_ALLOW_EXEC=true
-      - N8N_RESTRICT_FILE_ACCESS_TO=/input;/output;/data
-      - N8N_API_KEY=${N8N_API_KEY}
-    restart: unless-stopped
-
   ollama:
     image: ollama/ollama:latest
     ports:
@@ -26,6 +8,12 @@ services:
     environment:
       - OLLAMA_CONTEXT_LENGTH=16384
       - OLLAMA_KEEP_ALIVE=-1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     deploy:
       resources:
         reservations:
@@ -42,8 +30,15 @@ services:
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
       - MODEL_NAME=qwen2.5:7b
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     depends_on:
-      - ollama
+      ollama:
+        condition: service_healthy
     restart: unless-stopped
 
   script-adapter:
@@ -53,8 +48,15 @@ services:
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
       - MODEL_NAME=qwen2.5:7b
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     depends_on:
-      - ollama
+      ollama:
+        condition: service_healthy
     restart: unless-stopped
 
   xtts-v2:
@@ -64,9 +66,16 @@ services:
     volumes:
       - ./voices:/voices:ro
       - ./data/intermediate:/data/intermediate
+      - ./voice-cast.yaml:/voice-cast.yaml:ro
       - xtts-models:/root/.local/share/tts
     environment:
       - COQUI_TOS_AGREED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
     ipc: host
     ulimits:
       memlock: -1
@@ -89,6 +98,12 @@ services:
     environment:
       - TTS_BACKENDS={"xtts-v2":"http://xtts-v2:8003","qwen3-tts":"http://qwen3-tts:8007"}
       - DEFAULT_ENGINE=xtts-v2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8010/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
 
   qwen3-tts:
@@ -99,6 +114,12 @@ services:
       - ./data/intermediate:/data/intermediate
       - ./voice-cast.yaml:/voice-cast.yaml:ro
       - qwen3-models:/root/.cache/huggingface
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8007/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
     ipc: host
     ulimits:
       memlock: -1
@@ -119,6 +140,12 @@ services:
     volumes:
       - ./data/intermediate:/data/intermediate:ro
       - ./output:/output
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
 
   file-server:
@@ -128,10 +155,16 @@ services:
     volumes:
       - ./voices:/voices
       - ./output:/output
+      - ./data/intermediate:/data/intermediate
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
 
 volumes:
   root_ollama:
-    external: true
   xtts-models:
   qwen3-models:

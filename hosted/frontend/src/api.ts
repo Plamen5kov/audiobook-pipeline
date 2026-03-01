@@ -52,25 +52,41 @@ export interface ServiceStatus {
   detail: Record<string, unknown> | string;
 }
 
-export async function getServicesHealth(): Promise<ServiceStatus[]> {
-  const res = await fetch(`${BASE}/services/health`);
-  if (!res.ok) throw new Error('health check failed');
+// ── Shared request helper ────────────────────────────────────
+
+async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, init);
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(`${res.status}${detail ? `: ${detail}` : ''}`);
+  }
   return res.json();
+}
+
+async function requestVoid(url: string, init?: RequestInit): Promise<void> {
+  const res = await fetch(url, init);
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(`${res.status}${detail ? `: ${detail}` : ''}`);
+  }
+}
+
+// ── API functions ────────────────────────────────────────────
+
+export async function getServicesHealth(): Promise<ServiceStatus[]> {
+  return request<ServiceStatus[]>(`${BASE}/services/health`);
 }
 
 export async function fetchVoices(engine: string): Promise<Voice[]> {
-  const res = await fetch(`${BASE}/voices/${engine}`);
-  if (!res.ok) throw new Error(`Failed to fetch voices: ${res.status}`);
-  return res.json();
+  return request<Voice[]>(`${BASE}/voices/${engine}`);
 }
 
 export async function analyzeText(title: string, text: string, jobId: string): Promise<void> {
-  const res = await fetch(`${BASE}/api/analyze`, {
+  await requestVoid(`${BASE}/api/analyze`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title, text, job_id: jobId }),
   });
-  if (!res.ok) throw new Error(`Analyze error: ${res.status}`);
 }
 
 export async function pollStatus(jobId: string): Promise<StatusResponse | null> {
@@ -87,7 +103,7 @@ export async function startSynthesis(
   jobId: string,
   skipScriptAdapter: boolean,
 ): Promise<void> {
-  const res = await fetch(`${BASE}/api/synthesize`, {
+  await requestVoid(`${BASE}/api/synthesize`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -98,7 +114,6 @@ export async function startSynthesis(
       skip_script_adapter: skipScriptAdapter,
     }),
   });
-  if (!res.ok) throw new Error(`Synthesize error: ${res.status}`);
 }
 
 export function voiceUrl(engine: string, filename: string): string {
@@ -131,13 +146,11 @@ export interface ReSynthesizeResponse {
 }
 
 export async function reSynthesize(params: ReSynthesizeRequest): Promise<ReSynthesizeResponse> {
-  const res = await fetch(`${BASE}/api/re-synthesize`, {
+  return request<ReSynthesizeResponse>(`${BASE}/api/re-synthesize`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
-  if (!res.ok) throw new Error(`Re-synthesize error: ${res.status}`);
-  return res.json();
 }
 
 export interface ReStitchRequest {
@@ -155,13 +168,11 @@ export interface ReStitchResponse {
 }
 
 export async function reStitch(params: ReStitchRequest): Promise<ReStitchResponse> {
-  const res = await fetch(`${BASE}/api/re-stitch`, {
+  return request<ReStitchResponse>(`${BASE}/api/re-stitch`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
-  if (!res.ok) throw new Error(`Re-stitch error: ${res.status}`);
-  return res.json();
 }
 
 // ── Voice management ──────────────────────────────────────────
@@ -169,20 +180,14 @@ export async function reStitch(params: ReStitchRequest): Promise<ReStitchRespons
 export async function uploadVoice(engine: string, file: File): Promise<Voice> {
   const form = new FormData();
   form.append('file', file);
-  const res = await fetch(`${BASE}/voices/upload/${engine}`, {
+  return request<Voice>(`${BASE}/voices/upload/${engine}`, {
     method: 'POST',
     body: form,
   });
-  if (!res.ok) {
-    const detail = await res.text();
-    throw new Error(`Upload failed (${res.status}): ${detail}`);
-  }
-  return res.json();
 }
 
 export async function deleteVoice(engine: string, filename: string): Promise<void> {
-  const res = await fetch(`${BASE}/voices/${engine}/${filename}`, {
+  await requestVoid(`${BASE}/voices/${engine}/${filename}`, {
     method: 'DELETE',
   });
-  if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
 }

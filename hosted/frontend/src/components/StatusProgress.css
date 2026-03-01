@@ -1,0 +1,36 @@
+.phase-list { list-style: none; }
+
+.phase-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.95rem;
+}
+
+.phase-item:last-child { border-bottom: none; }
+
+.phase-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 0.85rem;
+}
+
+@media (min-width: 480px) {
+  .phase-icon { width: 28px; height: 28px; font-size: 0.8rem; }
+}
+
+.phase-icon.pending  { background: var(--surface2); color: var(--text-dim); }
+.phase-icon.running  { background: var(--accent);   color: #fff; }
+.phase-icon.done     { background: var(--success);  color: #fff; }
+.phase-icon.error    { background: var(--error);    color: #fff; }
+
+.phase-label { flex: 1; min-width: 0; }
+.phase-label .name   { font-weight: 500; }
+.phase-label .detail { font-size: 0.8rem; color: var(--text-dim); margin-top: 2px; }

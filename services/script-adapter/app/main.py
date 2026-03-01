@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
@@ -9,17 +10,40 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(message)s",
+)
 log = logging.getLogger(__name__)
-
-app = FastAPI(title="Script Adapter", description="Rewrites text segments for optimal spoken delivery")
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 MODEL_NAME = os.getenv("MODEL_NAME", "llama3.1:70b")
 
+OLLAMA_TIMEOUT_S = float(os.getenv("OLLAMA_TIMEOUT_S", "300"))
+
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 SYSTEM_PROMPT = (PROMPTS_DIR / "system.txt").read_text().strip()
 USER_PROMPT_TEMPLATE = (PROMPTS_DIR / "user.txt").read_text().strip()
+
+# Persistent HTTP client — created/closed via lifespan.
+_http_client: httpx.AsyncClient | None = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _http_client
+    _http_client = httpx.AsyncClient(timeout=OLLAMA_TIMEOUT_S)
+    log.info("httpx client created (timeout=%.0fs)", OLLAMA_TIMEOUT_S)
+    yield
+    if _http_client:
+        await _http_client.aclose()
+
+
+app = FastAPI(
+    title="Script Adapter",
+    description="Rewrites text segments for optimal spoken delivery",
+    lifespan=lifespan,
+)
 
 
 class Segment(BaseModel):
@@ -65,24 +89,23 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
 
 async def _call_ollama(prompt: str) -> str:
     """Call Ollama and return the raw response text."""
-    log.info("Calling Ollama model=%s", MODEL_NAME)
-    async with httpx.AsyncClient(timeout=None) as client:
-        try:
-            response = await client.post(
-                f"{OLLAMA_BASE_URL}/api/generate",
-                json={
-                    "model": MODEL_NAME,
-                    "prompt": prompt,
-                    "system": SYSTEM_PROMPT,
-                    "stream": False,
-                    "format": "json",
-                    "options": {"num_predict": -1},
-                },
-            )
-            response.raise_for_status()
-        except httpx.HTTPError as e:
-            log.error("Ollama request failed: %s", e)
-            raise HTTPException(status_code=502, detail=f"Ollama request failed: {e}")
+    log.info("Calling Ollama model=%s timeout=%.0fs", MODEL_NAME, OLLAMA_TIMEOUT_S)
+    try:
+        response = await _http_client.post(
+            f"{OLLAMA_BASE_URL}/api/generate",
+            json={
+                "model": MODEL_NAME,
+                "prompt": prompt,
+                "system": SYSTEM_PROMPT,
+                "stream": False,
+                "format": "json",
+                "options": {"num_predict": -1},
+            },
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as e:
+        log.error("Ollama request failed: %s", e)
+        raise HTTPException(status_code=502, detail=f"Ollama request failed: {e}")
 
     raw_text = response.json().get("response", "")
     log.info("Ollama responded (%d chars)", len(raw_text))
@@ -136,4 +159,4 @@ async def adapt_script(request: AdaptRequest):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "model": MODEL_NAME}
+    return {"status": "ok", "service": "script-adapter", "model": MODEL_NAME}

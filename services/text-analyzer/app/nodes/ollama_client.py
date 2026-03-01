@@ -8,10 +8,23 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 
 import httpx
 
 log = logging.getLogger(__name__)
+
+OLLAMA_TIMEOUT_S = float(os.getenv("OLLAMA_TIMEOUT_S", "300"))
+
+# Module-level persistent client — initialized on first use.
+_client: httpx.AsyncClient | None = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    global _client
+    if _client is None:
+        _client = httpx.AsyncClient(timeout=OLLAMA_TIMEOUT_S)
+    return _client
 
 
 async def call_ollama(
@@ -26,19 +39,19 @@ async def call_ollama(
     Raises on HTTP errors or malformed JSON so callers can handle
     failures at the node level.
     """
-    async with httpx.AsyncClient(timeout=None) as client:
-        resp = await client.post(
-            f"{ollama_url}/api/generate",
-            json={
-                "model": model_name,
-                "prompt": user_prompt,
-                "system": system_prompt,
-                "stream": False,
-                "format": "json",
-                "options": {"num_predict": -1},
-            },
-        )
-        resp.raise_for_status()
+    client = _get_client()
+    resp = await client.post(
+        f"{ollama_url}/api/generate",
+        json={
+            "model": model_name,
+            "prompt": user_prompt,
+            "system": system_prompt,
+            "stream": False,
+            "format": "json",
+            "options": {"num_predict": -1},
+        },
+    )
+    resp.raise_for_status()
 
     raw = resp.json().get("response", "")
     return json.loads(raw)

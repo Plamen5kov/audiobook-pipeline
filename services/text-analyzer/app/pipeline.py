@@ -39,7 +39,7 @@ async def run_pipeline(
         segments = turn_taking.apply_turn_taking(segments)
         characters = character_registry.build_character_registry(segments)
         segments = pause_timing.assign_pauses(segments)
-        validation.validate_completeness(segments, text)
+        validation_result = validation.validate_completeness(segments, text)
 
         segments = await ai_attribution.resolve_ambiguous_speakers(
             segments, characters, ollama_url, model_name,
@@ -53,8 +53,6 @@ async def run_pipeline(
         if s.kind == "narration":
             s.emotion = "neutral"
             s.intensity = 0.5
-        elif s.kind == "dialogue" and s.original_text.rstrip().endswith("?"):
-            s.emotion = "curious"
 
     output_segments = [
         {

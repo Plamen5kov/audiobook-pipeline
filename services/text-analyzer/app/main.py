@@ -8,7 +8,10 @@ from pydantic import BaseModel
 
 from .pipeline import run_pipeline
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(message)s",
+)
 log = logging.getLogger(__name__)
 
 app = FastAPI(
@@ -70,4 +73,4 @@ async def analyze_text(request: AnalyzeRequest):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "model": MODEL_NAME, "pipeline": "hybrid"}
+    return {"status": "ok", "service": "text-analyzer", "model": MODEL_NAME}

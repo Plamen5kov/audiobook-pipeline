@@ -9,9 +9,14 @@ interface Props {
 export function AnalyzeForm({ onAnalyze, disabled, error }: Props) {
   const [title, setTitle] = useState('Chapter 1: Strange Business');
   const [text, setText]   = useState(`\u201CWhat the bloody hell is going on?\u201D Jason asked.\nAs if in response to his question, something appeared in front of him. It looked like a touch screen, floating in the air, disembodied. He reached out to touch it with an experimental finger, the screen shimmering as his finger passed straight through.\n\u201CHologram?\u201D`);
+  const [validationError, setValidationError] = useState('');
 
   function handleSubmit() {
-    if (!text.trim()) { alert('Please paste chapter text first.'); return; }
+    if (!text.trim()) {
+      setValidationError('Please paste chapter text first.');
+      return;
+    }
+    setValidationError('');
     onAnalyze(title.trim(), text.trim());
   }
 
@@ -34,15 +39,16 @@ export function AnalyzeForm({ onAnalyze, disabled, error }: Props) {
         <textarea
           id="text"
           value={text}
-          onChange={e => setText(e.target.value)}
-          placeholder="Paste your chapter text here…"
+          onChange={e => { setText(e.target.value); if (validationError) setValidationError(''); }}
+          placeholder="Paste your chapter text here\u2026"
           disabled={disabled}
           rows={8}
         />
+        {validationError && <p className="error-msg">{validationError}</p>}
       </div>
       <div className="field">
         <button className="btn-primary" onClick={handleSubmit} disabled={disabled}>
-          {disabled ? 'Processing…' : 'Analyze Text'}
+          {disabled ? 'Processing\u2026' : 'Analyze Text'}
         </button>
       </div>
       {error && <p className="error-msg">{error}</p>}

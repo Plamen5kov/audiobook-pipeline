@@ -1,20 +1,8 @@
 import { useState, useCallback } from 'react';
 import { Voice, Segment, ClipInfo, reSynthesize, reStitch, ReSynthesizeRequest } from '../api';
-
-const EMOTIONS = ['neutral', 'happy', 'sad', 'angry', 'fearful', 'excited', 'tense', 'contemplative', 'curious'];
-const QWEN_VOICES = ['Vivian', 'Serena', 'Uncle_Fu', 'Dylan', 'Eric', 'Ryan', 'Aiden', 'Ono_Anna', 'Sohee'];
-
-type SegStatus = 'clean' | 'modified' | 'busy' | 'done' | 'error';
-
-interface SegState {
-  emotion: string;
-  intensity: number;
-  engine: string;
-  voice: string;   // xtts filename or qwen voice name
-  speed: number;
-  status: SegStatus;
-  error?: string;
-}
+import { formatError } from '../utils/formatError';
+import { SegmentCard, SegState } from './SegmentCard';
+import './PostProduction.css';
 
 interface Props {
   segments: Segment[];
@@ -23,7 +11,7 @@ interface Props {
   engineMapping: Record<string, string>;
   voices: Voice[];
   outputFile: string;
-  onClipsChange: (clips: ClipInfo[]) => void;
+  onClipsChange: (updater: ClipInfo[] | ((prev: ClipInfo[]) => ClipInfo[])) => void;
   onOutputFileChange: (f: string) => void;
 }
 
@@ -89,7 +77,7 @@ export function PostProduction({
     .filter(([, s]) => s.status === 'modified')
     .map(([id]) => Number(id));
 
-  // ── Re-synthesize a single segment ──────────────────────────
+  // Bug fix: use functional updater to avoid stale closure on `clips`
   const handleReSynth = useCallback(async (seg: Segment) => {
     const st = segStates[seg.id];
     if (!st) return;
@@ -111,20 +99,18 @@ export function PostProduction({
 
     try {
       const result = await reSynthesize(params);
-      // Update the clips list with the new file path
-      onClipsChange(clips.map(c =>
+      onClipsChange(prev => prev.map(c =>
         c.id === seg.id ? { ...c, file_path: result.file_path } : c,
       ));
       updateSeg(seg.id, { status: 'done' });
     } catch (e) {
       updateSeg(seg.id, {
         status: 'error',
-        error: e instanceof Error ? e.message : String(e),
+        error: formatError(e),
       });
     }
-  }, [segStates, clips, updateSeg, onClipsChange]);
+  }, [segStates, updateSeg, onClipsChange]);
 
-  // ── Re-synthesize all modified segments sequentially ────────
   const handleReSynthAll = useCallback(async () => {
     for (const id of modifiedIds) {
       const seg = segments.find(s => s.id === id);
@@ -132,7 +118,6 @@ export function PostProduction({
     }
   }, [modifiedIds, segments, handleReSynth]);
 
-  // ── Re-stitch final audio ───────────────────────────────────
   const handleReStitch = useCallback(async () => {
     setStitching(true);
     setStitchMsg('');
@@ -144,7 +129,7 @@ export function PostProduction({
       onOutputFileChange(result.filename);
       setStitchMsg(`Stitched ${result.clips_count} clips (${(result.duration_ms / 1000).toFixed(1)}s)`);
     } catch (e) {
-      setStitchMsg('Stitch failed: ' + (e instanceof Error ? e.message : String(e)));
+      setStitchMsg('Stitch failed: ' + formatError(e));
     } finally {
       setStitching(false);
     }
@@ -191,118 +176,16 @@ export function PostProduction({
         {paged.map(seg => {
           const st = segStates[seg.id];
           if (!st) return null;
-          const isQwen = st.engine === 'qwen3-tts';
-
           return (
-            <div key={seg.id} className={`pp-seg pp-seg--${st.status}`}>
-              <div className="pp-seg-header">
-                <span className="pp-seg-id">#{seg.id}</span>
-                <span className="pp-seg-speaker">{seg.speaker}</span>
-                <span className={`pp-seg-badge pp-seg-badge--${st.status}`}>
-                  {st.status === 'clean' && '\u2014'}
-                  {st.status === 'modified' && 'modified'}
-                  {st.status === 'busy' && 'synth...'}
-                  {st.status === 'done' && 'done'}
-                  {st.status === 'error' && 'error'}
-                </span>
-              </div>
-
-              <div className="pp-seg-text">
-                {seg.original_text.length > 120
-                  ? seg.original_text.slice(0, 120) + '...'
-                  : seg.original_text}
-              </div>
-
-              <div className="pp-seg-controls">
-                {/* Emotion */}
-                <label className="pp-ctrl">
-                  <span>Emotion</span>
-                  <select
-                    value={st.emotion}
-                    onChange={e => updateSeg(seg.id, { emotion: e.target.value })}
-                    disabled={st.status === 'busy'}
-                  >
-                    {EMOTIONS.map(em => (
-                      <option key={em} value={em}>{em}</option>
-                    ))}
-                  </select>
-                </label>
-
-                {/* Intensity */}
-                <label className="pp-ctrl">
-                  <span>Intensity {st.intensity.toFixed(1)}</span>
-                  <input
-                    type="range"
-                    min={0} max={1} step={0.1}
-                    value={st.intensity}
-                    onChange={e => updateSeg(seg.id, { intensity: parseFloat(e.target.value) })}
-                    disabled={st.status === 'busy'}
-                  />
-                </label>
-
-                {/* Engine toggle */}
-                <div className="pp-ctrl">
-                  <span>Engine</span>
-                  <div className="engine-toggle">
-                    <button
-                      className={!isQwen ? 'active' : ''}
-                      onClick={() => {
-                        const defaultVoice = voiceMapping[seg.speaker] ?? (voices[0]?.filename || '');
-                        updateSeg(seg.id, { engine: 'xtts-v2', voice: defaultVoice });
-                      }}
-                      disabled={st.status === 'busy'}
-                    >
-                      XTTS&#8209;v2
-                    </button>
-                    <button
-                      className={isQwen ? 'active' : ''}
-                      onClick={() => updateSeg(seg.id, { engine: 'qwen3-tts', voice: 'Ryan' })}
-                      disabled={st.status === 'busy'}
-                    >
-                      Qwen3
-                    </button>
-                  </div>
-                </div>
-
-                {/* Voice selector */}
-                <label className="pp-ctrl">
-                  <span>Voice</span>
-                  <select
-                    value={st.voice}
-                    onChange={e => updateSeg(seg.id, { voice: e.target.value })}
-                    disabled={st.status === 'busy'}
-                  >
-                    {isQwen
-                      ? QWEN_VOICES.map(v => <option key={v} value={v}>{v}</option>)
-                      : voices.map(v => <option key={v.filename} value={v.filename}>{v.name}</option>)
-                    }
-                  </select>
-                </label>
-
-                {/* Speed */}
-                <label className="pp-ctrl">
-                  <span>Speed {st.speed.toFixed(1)}</span>
-                  <input
-                    type="range"
-                    min={0.5} max={2.0} step={0.1}
-                    value={st.speed}
-                    onChange={e => updateSeg(seg.id, { speed: parseFloat(e.target.value) })}
-                    disabled={st.status === 'busy'}
-                  />
-                </label>
-
-                {/* Re-synth button */}
-                <button
-                  className="pp-resynth-btn"
-                  onClick={() => handleReSynth(seg)}
-                  disabled={st.status === 'busy' || st.status === 'clean'}
-                >
-                  {st.status === 'busy' ? 'Synth...' : 'Re-synth'}
-                </button>
-              </div>
-
-              {st.error && <div className="pp-seg-error">{st.error}</div>}
-            </div>
+            <SegmentCard
+              key={seg.id}
+              seg={seg}
+              st={st}
+              voiceMapping={voiceMapping}
+              voices={voices}
+              onUpdate={updateSeg}
+              onReSynth={handleReSynth}
+            />
           );
         })}
 
@@ -321,7 +204,7 @@ export function PostProduction({
             Prev
           </button>
           <span className="pp-pager-info">
-            {safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, filtered.length)} of {filtered.length}
+            {safePage * PAGE_SIZE + 1}&ndash;{Math.min((safePage + 1) * PAGE_SIZE, filtered.length)} of {filtered.length}
           </span>
           <button
             className="pp-pager-btn"

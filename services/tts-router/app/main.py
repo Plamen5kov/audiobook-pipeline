@@ -2,19 +2,18 @@ import json
 import logging
 import os
 import time
+from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-log = logging.getLogger(__name__)
-
-app = FastAPI(
-    title="TTS Router",
-    description="Routes /synthesize requests to the correct TTS backend based on the 'engine' field.",
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(message)s",
 )
+log = logging.getLogger(__name__)
 
 # Backend map: engine name -> base URL. Loaded from TTS_BACKENDS env var (JSON string).
 # Example: '{"xtts-v2":"http://xtts-v2:8003","qwen3-tts":"http://qwen3-tts:8007"}'
@@ -39,8 +38,8 @@ class SynthesizeRequest(BaseModel):
     speed: float = 1.0
 
 
-@app.on_event("startup")
-async def startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     global _http_client
     _http_client = httpx.AsyncClient(timeout=1200.0)
 
@@ -52,11 +51,17 @@ async def startup():
             log.info("  %s -> %s", engine, url)
     log.info("default_engine=%s", DEFAULT_ENGINE)
 
+    yield
 
-@app.on_event("shutdown")
-async def shutdown():
     if _http_client:
         await _http_client.aclose()
+
+
+app = FastAPI(
+    title="TTS Router",
+    description="Routes /synthesize requests to the correct TTS backend based on the 'engine' field.",
+    lifespan=lifespan,
+)
 
 
 def _resolve_backend(engine: str) -> tuple[str, str]:
@@ -77,19 +82,27 @@ def _resolve_backend(engine: str) -> tuple[str, str]:
 
 
 @app.post("/synthesize")
-async def synthesize(request: SynthesizeRequest):
-    engine = request.engine.strip() or DEFAULT_ENGINE
+async def synthesize(request: Request):
+    # Read raw body and parse only what we need for routing.
+    body_bytes = await request.body()
+    try:
+        body_json = json.loads(body_bytes)
+    except (json.JSONDecodeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    engine = (body_json.get("engine") or "").strip() or DEFAULT_ENGINE
+    segment_id = body_json.get("segment_id", "?")
+    speaker = body_json.get("speaker", "?")
+
     resolved_engine, backend_base = _resolve_backend(engine)
     backend_url = f"{backend_base}/synthesize"
 
     log.info(
         "request received: segment_id=%s speaker=%s engine=%s backend=%s",
-        request.segment_id, request.speaker, resolved_engine, backend_url,
+        segment_id, speaker, resolved_engine, backend_url,
     )
 
-    # Forward the original request body as-is so no fields are dropped.
-    body_bytes = request.model_dump_json().encode()
-
+    # Forward the original body as-is so no fields are dropped.
     start = time.monotonic()
     try:
         resp = await _http_client.post(
@@ -111,7 +124,7 @@ async def synthesize(request: SynthesizeRequest):
 
     log.info(
         "response sent: segment_id=%s engine=%s status=%s duration=%.2fs",
-        request.segment_id, resolved_engine, resp.status_code, duration_s,
+        segment_id, resolved_engine, resp.status_code, duration_s,
     )
 
     return Response(
@@ -125,6 +138,7 @@ async def synthesize(request: SynthesizeRequest):
 async def health():
     return {
         "status": "ok",
+        "service": "tts-router",
         "default_engine": DEFAULT_ENGINE,
         "backends": BACKENDS,
     }

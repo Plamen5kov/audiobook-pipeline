@@ -7,7 +7,10 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from pydub import AudioSegment
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(message)s",
+)
 log = logging.getLogger(__name__)
 
 app = FastAPI(title="Audio Assembly", description="Combines audio segments into a complete audiobook chapter")
@@ -32,7 +35,7 @@ class AssembleRequest(BaseModel):
 
 
 @app.post("/assemble")
-async def assemble(request: AssembleRequest):
+def assemble(request: AssembleRequest):
     if not request.clips:
         raise HTTPException(status_code=400, detail="No clips provided")
 
@@ -58,11 +61,13 @@ async def assemble(request: AssembleRequest):
         else:
             combined += segment_audio
 
-    if request.normalize:
+    if request.normalize and combined.dBFS > -80:
         change_in_dbfs = request.target_dbfs - combined.dBFS
         combined = combined.apply_gain(change_in_dbfs)
         log.info("Normalized: %.1f dBFS → %.1f dBFS (gain %.1f dB)",
                  combined.dBFS - change_in_dbfs, combined.dBFS, change_in_dbfs)
+    elif request.normalize:
+        log.warning("Skipping normalization — audio is silent (dBFS=%.1f)", combined.dBFS)
 
     output_filename = request.output_filename or f"chapter_{uuid.uuid4().hex[:8]}.wav"
     output_path = os.path.join(OUTPUT_DIR, output_filename)
@@ -81,4 +86,4 @@ async def assemble(request: AssembleRequest):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "service": "audio-assembly"}

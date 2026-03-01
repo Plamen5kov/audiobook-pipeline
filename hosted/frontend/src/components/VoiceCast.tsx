@@ -1,10 +1,8 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Voice, Segment, voiceUrl } from '../api';
-
-const QWEN_VOICES = ['Vivian', 'Serena', 'Uncle_Fu', 'Dylan', 'Eric', 'Ryan', 'Aiden', 'Ono_Anna', 'Sohee'];
-const QWEN_DEFAULT = 'Ryan';
-
-type Engine = 'xtts-v2' | 'qwen3-tts';
+import { QWEN_VOICES, QWEN_DEFAULT, Engine } from '../constants/engines';
+import { useAudioPreview } from '../hooks/useAudioPreview';
+import './VoiceCast.css';
 
 interface Props {
   segments: Segment[];
@@ -24,14 +22,12 @@ export function VoiceCast({ segments, voices, onGenerate, disabled = false }: Pr
   const speakers = [...new Set(segments.map(s => s.speaker).filter(Boolean))];
   const displayVoices = voices.length > 0 ? voices : [{ name: 'generic_neutral', filename: 'generic_neutral.wav' }];
 
-  // engines[speaker] = which TTS engine is active for that speaker
   const [engines, setEngines] = useState<Record<string, Engine>>(() => {
     const init: Record<string, Engine> = {};
     speakers.forEach(sp => { init[sp] = 'xtts-v2'; });
     return init;
   });
 
-  // selected[speaker] = WAV filename (xtts-v2) OR Qwen voice name (qwen3-tts)
   const [selected, setSelected] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
     speakers.forEach((sp, i) => { init[sp] = pickDefault(sp, i, displayVoices); });
@@ -39,35 +35,17 @@ export function VoiceCast({ segments, voices, onGenerate, disabled = false }: Pr
   });
 
   const [skipAdapter, setSkipAdapter] = useState(true);
-  const [playing, setPlaying]         = useState<string | null>(null);
   const [editJson, setEditJson]       = useState(() => JSON.stringify(segments, null, 2));
   const [jsonError, setJsonError]     = useState<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement>(new Audio());
+  const { playing, togglePreview, stopPreview } = useAudioPreview();
 
-  // Reset editable JSON whenever a new analysis arrives
   useEffect(() => {
     setEditJson(JSON.stringify(segments, null, 2));
     setJsonError(null);
   }, [segments]);
 
-  const togglePreview = useCallback((engine: string, filename: string) => {
-    const key = `${engine}/${filename}`;
-    const audio = audioRef.current;
-    if (playing === key && !audio.paused) {
-      audio.pause();
-      setPlaying(null);
-    } else {
-      audio.pause();
-      audio.src = voiceUrl(engine, filename);
-      audio.play().catch(() => {});
-      setPlaying(key);
-      audio.onended = () => setPlaying(null);
-    }
-  }, [playing]);
-
   function switchEngine(speaker: string, engine: Engine) {
-    audioRef.current.pause();
-    setPlaying(null);
+    stopPreview();
     setEngines(prev => ({ ...prev, [speaker]: engine }));
     setSelected(prev => ({
       ...prev,
@@ -94,7 +72,7 @@ export function VoiceCast({ segments, voices, onGenerate, disabled = false }: Pr
   }
 
   function handleGenerate() {
-    audioRef.current.pause();
+    stopPreview();
     if (jsonError) return;
     let parsedSegments: Segment[] = segments;
     try {
@@ -150,9 +128,9 @@ export function VoiceCast({ segments, voices, onGenerate, disabled = false }: Pr
                         <button
                           className="chip-play"
                           title={`Preview ${v}`}
-                          onClick={e => { e.stopPropagation(); togglePreview('qwen3', qwenFile); }}
+                          onClick={e => { e.stopPropagation(); togglePreview(`qwen3/${qwenFile}`, voiceUrl('qwen3', qwenFile)); }}
                         >
-                          {isPlaying ? '⏹' : '▶'}
+                          {isPlaying ? '\u23F9' : '\u25B6'}
                         </button>
                         <span className="chip-name">{v.replace(/_/g, '\u00a0')}</span>
                       </div>
@@ -170,9 +148,9 @@ export function VoiceCast({ segments, voices, onGenerate, disabled = false }: Pr
                         <button
                           className="chip-play"
                           title={`Preview ${v.name}`}
-                          onClick={e => { e.stopPropagation(); togglePreview('xtts', v.filename); }}
+                          onClick={e => { e.stopPropagation(); togglePreview(`xtts/${v.filename}`, voiceUrl('xtts', v.filename)); }}
                         >
-                          {isPlaying ? '⏹' : '▶'}
+                          {isPlaying ? '\u23F9' : '\u25B6'}
                         </button>
                         <span className="chip-name">{v.name}</span>
                       </div>
@@ -199,7 +177,7 @@ export function VoiceCast({ segments, voices, onGenerate, disabled = false }: Pr
             spellCheck={false}
             disabled={disabled}
           />
-          {jsonError && <div className="segments-json-error">⚠ {jsonError}</div>}
+          {jsonError && <div className="segments-json-error">&#9888; {jsonError}</div>}
         </div>
       </details>
 
@@ -217,7 +195,7 @@ export function VoiceCast({ segments, voices, onGenerate, disabled = false }: Pr
           </span>
         </label>
         <button className="btn-primary" onClick={handleGenerate} disabled={disabled || !!jsonError}>
-          {disabled ? 'Synthesizing…' : 'Generate Audiobook'}
+          {disabled ? 'Synthesizing\u2026' : 'Generate Audiobook'}
         </button>
       </div>
     </div>

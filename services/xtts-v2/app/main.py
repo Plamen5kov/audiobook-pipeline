@@ -1,10 +1,12 @@
 import logging
 import os
 import time
+from contextlib import asynccontextmanager
 
 import soundfile as sf
 import torch
 import torchaudio
+import yaml
 
 # ---------------------------------------------------------------------------
 # torchaudio monkey-patch
@@ -29,10 +31,11 @@ from fastapi import FastAPI, HTTPException  # noqa: E402 -- must follow monkey-p
 from pydantic import BaseModel              # noqa: E402
 from TTS.api import TTS                     # noqa: E402
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(message)s",
+)
 log = logging.getLogger(__name__)
-
-app = FastAPI(title="XTTS v2 TTS Service", description="Text-to-speech synthesis using Coqui XTTS v2")
 
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "/data/intermediate")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -40,13 +43,28 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # Model loads on startup.
 tts_model: TTS | None = None
 
-# Hardcoded voice cast used when the request does not supply reference_audio_path.
-VOICE_CAST = {
-    "narrator": "/voices/xtts/narrator.wav",
-    "Elena":    "/voices/xtts/elena.wav",
-    "Marcus":   "/voices/xtts/marcus.wav",
-}
+VOICE_CAST_PATH = os.getenv("VOICE_CAST_PATH", "/voice-cast.yaml")
 DEFAULT_VOICE = "/voices/xtts/generic_neutral.wav"
+
+# Voice cast loaded from voice-cast.yaml at startup.
+VOICE_CAST: dict[str, str] = {}
+
+
+def _load_voice_cast() -> None:
+    """Load voice-cast.yaml and build speaker→reference_audio mapping."""
+    global VOICE_CAST
+    if not os.path.exists(VOICE_CAST_PATH):
+        log.warning("voice-cast.yaml not found at %s — using defaults", VOICE_CAST_PATH)
+        return
+    with open(VOICE_CAST_PATH) as f:
+        config = yaml.safe_load(f)
+    voices = config.get("voices", {})
+    VOICE_CAST = {
+        name: profile.get("reference_audio", DEFAULT_VOICE)
+        for name, profile in voices.items()
+        if profile.get("reference_audio")
+    }
+    log.info("voice cast loaded: %d entries from %s", len(VOICE_CAST), VOICE_CAST_PATH)
 
 
 # ---------------------------------------------------------------------------
@@ -54,12 +72,21 @@ DEFAULT_VOICE = "/voices/xtts/generic_neutral.wav"
 # ---------------------------------------------------------------------------
 
 
-@app.on_event("startup")
-async def load_model():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     global tts_model
+    _load_voice_cast()
     log.info("loading model: model=xtts_v2")
     tts_model = TTS("tts_models/multilingual/multi-dataset/xtts_v2", gpu=True)
     log.info("model loaded: model=xtts_v2")
+    yield
+
+
+app = FastAPI(
+    title="XTTS v2 TTS Service",
+    description="Text-to-speech synthesis using Coqui XTTS v2",
+    lifespan=lifespan,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -109,7 +136,8 @@ def _generate_audio(text: str, ref: str, speed: float, output_path: str) -> None
 
 
 @app.post("/synthesize")
-async def synthesize(request: SynthesizeRequest):
+def synthesize(request: SynthesizeRequest):
+    """Sync handler — FastAPI auto-offloads to threadpool, avoiding event loop blocking."""
     if tts_model is None:
         raise HTTPException(status_code=503, detail="Model not loaded yet")
 
@@ -150,5 +178,6 @@ async def synthesize(request: SynthesizeRequest):
 async def health():
     return {
         "status": "ok" if tts_model is not None else "loading",
+        "service": "xtts-v2",
         "model": "xtts_v2",
     }

@@ -1,0 +1,308 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:           #0f1117;
+  --surface:      #1a1d27;
+  --surface2:     #22263a;
+  --border:       #2e3354;
+  --accent:       #6c63ff;
+  --accent-hover: #7d75ff;
+  --text:         #e8e9f0;
+  --text-dim:     #8b8fa8;
+  --success:      #4caf7d;
+  --warning:      #f0a500;
+  --error:        #e05252;
+}
+
+html { font-size: 16px; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 16px 80px;
+}
+
+@media (min-width: 480px) {
+  body { padding: 40px 20px 80px; }
+}
+
+/* ── Cards ───────────────────────────────────────────────────── */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  width: 100%;
+  max-width: 720px;
+  margin-bottom: 16px;
+}
+
+@media (min-width: 480px) {
+  .card { padding: 28px; margin-bottom: 20px; }
+}
+
+.card h2 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 16px;
+}
+
+@media (min-width: 480px) {
+  .card h2 { font-size: 1rem; margin-bottom: 18px; }
+}
+
+.card .subtitle {
+  font-size: 0.875rem;
+  color: var(--text-dim);
+  margin-top: -8px;
+  margin-bottom: 16px;
+}
+
+/* ── Form controls ───────────────────────────────────────────── */
+
+label {
+  display: block;
+  font-size: 0.875rem;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+input[type="text"], textarea {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 1rem;
+  padding: 10px 14px;
+  outline: none;
+  transition: border-color 0.2s;
+  font-family: inherit;
+  -webkit-appearance: none;
+}
+
+input[type="text"]:focus, textarea:focus {
+  border-color: var(--accent);
+}
+
+textarea {
+  resize: vertical;
+  min-height: 180px;
+  line-height: 1.6;
+}
+
+@media (min-width: 480px) {
+  textarea { min-height: 220px; }
+}
+
+.field { margin-bottom: 18px; }
+.field:last-child { margin-bottom: 0; }
+
+/* ── Buttons ─────────────────────────────────────────────────── */
+
+.btn-primary {
+  display: block;
+  width: 100%;
+  padding: 16px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, opacity 0.2s;
+  -webkit-tap-highlight-color: transparent;
+  min-height: 52px;
+}
+
+.btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Error ───────────────────────────────────────────────────── */
+
+.error-msg {
+  color: var(--error);
+  font-size: 0.9rem;
+  margin-top: 12px;
+}
+
+/* ── Header ──────────────────────────────────────────────────── */
+
+.app-header {
+  text-align: center;
+  margin-bottom: 32px;
+  width: 100%;
+  max-width: 720px;
+}
+
+@media (min-width: 480px) {
+  .app-header { margin-bottom: 40px; }
+}
+
+.app-header h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+@media (min-width: 480px) {
+  .app-header h1 { font-size: 2rem; }
+}
+
+.app-header h1 span { color: var(--accent); }
+
+.app-header p {
+  color: var(--text-dim);
+  margin-top: 8px;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+/* ── Shared animations ───────────────────────────────────────── */
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.45; }
+}
+
+@keyframes vm-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* ── Engine toggle (shared) ──────────────────────────────────── */
+
+.engine-toggle {
+  display: inline-flex;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.engine-toggle button {
+  padding: 3px 9px;
+  border: none;
+  border-radius: 5px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-dim);
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+  min-height: 26px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.engine-toggle button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.engine-toggle button:not(.active):hover { color: var(--text); }
+
+/* ── Toggle switch (shared) ──────────────────────────────────── */
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-text {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--border);
+  border-radius: 20px;
+  transition: background 0.2s;
+  cursor: pointer;
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  left: 3px;
+  top: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background: var(--accent);
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(16px);
+}
+
+.toggle-switch input:disabled + .toggle-slider {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Chip play button (shared) ───────────────────────────────── */
+
+.chip-play {
+  padding: 8px 8px 8px 12px;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: color 0.15s;
+  line-height: 1;
+  min-width: 32px;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  -webkit-tap-highlight-color: transparent;
+}

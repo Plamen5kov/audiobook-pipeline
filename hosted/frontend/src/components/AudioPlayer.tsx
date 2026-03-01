@@ -1,4 +1,5 @@
 import { audioUrl } from '../api';
+import './AudioPlayer.css';
 
 interface Props {
   filename: string;

@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import re
+from contextlib import asynccontextmanager
 
 import aiofiles
 import httpx
@@ -11,10 +12,33 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+from .orchestrator import run_analyze, run_synthesize
+
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(message)s",
+)
 log = logging.getLogger(__name__)
 
-app = FastAPI(title="File Server", description="Serves voice samples and generated audio; accepts voice uploads")
+
+# ---------------------------------------------------------------------------
+# Lifespan: persistent httpx client
+# ---------------------------------------------------------------------------
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.http_client = httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0))
+    log.info("persistent httpx.AsyncClient created (timeout=300s)")
+    yield
+    await app.state.http_client.aclose()
+    log.info("httpx.AsyncClient closed")
+
+
+app = FastAPI(
+    title="File Server",
+    description="Serves voice samples and generated audio; orchestrates the pipeline",
+    lifespan=lifespan,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,7 +50,6 @@ app.add_middleware(
 VOICES_DIR = os.getenv("VOICES_DIR", "/voices")
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "/output")
 STATIC_DIR = os.getenv("STATIC_DIR", "/static")
-N8N_URL    = os.getenv("N8N_URL", "http://n8n:5678")
 
 
 def _safe_filename(name: str) -> str:
@@ -166,7 +189,7 @@ async def get_audio(filename: str, request: Request):
 
 @app.post("/status/{job_id}")
 async def write_status(job_id: str, request: Request):
-    """Write a job status update (called by n8n workflows)."""
+    """Write a job status update (called by the orchestrator or external tools)."""
     job_id = _safe_filename(job_id)
     data = await request.json()
     path = os.path.join(OUTPUT_DIR, f"status_{job_id}.json")
@@ -198,35 +221,47 @@ async def read_status(job_id: str):
     return json.loads(content)
 
 
-async def _proxy_to_n8n(webhook: str, body: bytes) -> JSONResponse:
-    """Forward a request body to an n8n webhook and return the response."""
-    url = f"{N8N_URL}/webhook/{webhook}"
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            r = await client.post(url, content=body, headers={"Content-Type": "application/json"})
-        return JSONResponse(content=r.json(), status_code=r.status_code)
-    except httpx.HTTPError as exc:
-        log.error("Proxy to %s failed: %s", url, exc)
-        raise HTTPException(status_code=502, detail=f"Upstream request failed: {exc}")
-
-
 @app.post("/api/analyze")
-async def proxy_analyze(request: Request):
-    """Proxy POST to n8n /webhook/analyze — avoids CORS issues in the browser."""
-    return await _proxy_to_n8n("analyze", await request.body())
+async def api_analyze(request: Request):
+    """Start the analysis pipeline as a background task."""
+    body = await request.json()
+    job_id = body.get("job_id", "")
+    title = body.get("title", "Untitled Chapter")
+    text = body.get("text", "")
+
+    if not job_id:
+        raise HTTPException(status_code=400, detail="job_id is required")
+
+    client: httpx.AsyncClient = request.app.state.http_client
+    asyncio.create_task(run_analyze(client, job_id, title, text))
+    return JSONResponse({"status": "analyzing", "job_id": job_id})
 
 
 @app.post("/api/synthesize")
-async def proxy_synthesize(request: Request):
-    """Proxy POST to n8n /webhook/synthesize — avoids CORS issues in the browser."""
-    return await _proxy_to_n8n("synthesize", await request.body())
+async def api_synthesize(request: Request):
+    """Start the synthesis pipeline as a background task."""
+    body = await request.json()
+    job_id = body.get("job_id", "")
+    segments = body.get("segments", [])
+    voice_mapping = body.get("voice_mapping", {})
+    engine_mapping = body.get("engine_mapping", {})
+    skip_script_adapter = body.get("skip_script_adapter", False)
+
+    if not job_id:
+        raise HTTPException(status_code=400, detail="job_id is required")
+
+    client: httpx.AsyncClient = request.app.state.http_client
+    asyncio.create_task(run_synthesize(
+        client, job_id, segments, voice_mapping, engine_mapping, skip_script_adapter,
+    ))
+    return JSONResponse({"status": "synthesizing", "job_id": job_id})
 
 
-async def _proxy_to_service(url: str, body: bytes, timeout: float) -> JSONResponse:
-    """Forward a request body to an internal service and return the JSON response."""
+async def _proxy_to_service(url: str, body: bytes, request: Request) -> JSONResponse:
+    """Forward a request body to an internal service using the persistent client."""
+    client: httpx.AsyncClient = request.app.state.http_client
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            r = await client.post(url, content=body, headers={"Content-Type": "application/json"})
+        r = await client.post(url, content=body, headers={"Content-Type": "application/json"})
         return JSONResponse(content=r.json(), status_code=r.status_code)
     except httpx.HTTPError as exc:
         log.error("Proxy to %s failed: %s", url, exc)
@@ -237,7 +272,7 @@ async def _proxy_to_service(url: str, body: bytes, timeout: float) -> JSONRespon
 async def re_synthesize(request: Request):
     """Proxy a single-segment re-synthesis request to tts-router."""
     return await _proxy_to_service(
-        "http://tts-router:8010/synthesize", await request.body(), timeout=1200.0,
+        "http://tts-router:8010/synthesize", await request.body(), request,
     )
 
 
@@ -245,13 +280,13 @@ async def re_synthesize(request: Request):
 async def re_stitch(request: Request):
     """Proxy a re-assembly request to audio-assembly."""
     return await _proxy_to_service(
-        "http://audio-assembly:8005/assemble", await request.body(), timeout=120.0,
+        "http://audio-assembly:8005/assemble", await request.body(), request,
     )
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "service": "file-server"}
 
 
 _PIPELINE_SERVICES = {
@@ -261,19 +296,19 @@ _PIPELINE_SERVICES = {
     "tts-router":     "http://tts-router:8010/health",
     "qwen3-tts":      "http://qwen3-tts:8007/health",
     "audio-assembly": "http://audio-assembly:8005/health",
-    "n8n":            f"{N8N_URL}/healthz",
 }
 
 
 @app.get("/services/health")
-async def services_health():
+async def services_health(request: Request):
     """Fan-out health check to all pipeline services in parallel."""
+    client: httpx.AsyncClient = request.app.state.http_client
+
     async def check(name: str, url: str) -> dict:
         try:
-            async with httpx.AsyncClient(timeout=3.0) as c:
-                r = await c.get(url)
-                data = r.json()
-                return {"name": name, "status": data.get("status", "ok"), "detail": data}
+            r = await client.get(url, timeout=3.0)
+            data = r.json()
+            return {"name": name, "status": data.get("status", "ok"), "detail": data}
         except Exception as exc:
             return {"name": name, "status": "error", "detail": str(exc)}
 

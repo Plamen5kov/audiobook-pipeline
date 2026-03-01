@@ -3,6 +3,7 @@ import os
 import subprocess
 import tempfile
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import soundfile as sf
@@ -12,13 +13,11 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from qwen_tts import Qwen3TTSModel
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-log = logging.getLogger(__name__)
-
-app = FastAPI(
-    title="Qwen3 TTS Service",
-    description="TTS synthesis using Qwen3-TTS-12Hz-1.7B-CustomVoice",
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(message)s",
 )
+log = logging.getLogger(__name__)
 
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "/data/intermediate")
 VOICE_CAST_PATH = os.getenv("VOICE_CAST_PATH", "/voice-cast.yaml")
@@ -101,8 +100,8 @@ def _build_instruct(speaker: str, emotion: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-@app.on_event("startup")
-async def load_model():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     global tts_model
     _load_voice_cast()
     log.info("loading model: model_id=%s", MODEL_ID)
@@ -110,10 +109,16 @@ async def load_model():
         MODEL_ID,
         device_map="cuda:0",
         dtype=torch.bfloat16,
-        # attn_implementation omitted -- flash_attention_2 has no aarch64 wheel;
-        # the model falls back to standard attention automatically.
     )
     log.info("model loaded: model_id=%s", MODEL_ID)
+    yield
+
+
+app = FastAPI(
+    title="Qwen3 TTS Service",
+    description="TTS synthesis using Qwen3-TTS-12Hz-1.7B-CustomVoice",
+    lifespan=lifespan,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +207,8 @@ def _apply_atempo(file_path: str, speed: float) -> None:
 
 
 @app.post("/synthesize")
-async def synthesize(request: SynthesizeRequest):
+def synthesize(request: SynthesizeRequest):
+    """Sync handler — FastAPI auto-offloads to threadpool, avoiding event loop blocking."""
     if tts_model is None:
         raise HTTPException(status_code=503, detail="Model not loaded yet")
 
@@ -243,5 +249,6 @@ async def synthesize(request: SynthesizeRequest):
 async def health():
     return {
         "status": "ok" if tts_model is not None else "loading",
+        "service": "qwen3-tts",
         "model": MODEL_ID,
     }

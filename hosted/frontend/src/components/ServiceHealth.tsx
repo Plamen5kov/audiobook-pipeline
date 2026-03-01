@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useState, useCallback } from 'react';
 import { getServicesHealth, ServiceStatus } from '../api';
+import { usePolling } from '../hooks/usePolling';
+import './ServiceHealth.css';
 
 const REFRESH_MS = 10_000;
 
@@ -17,25 +19,19 @@ function detailLabel(svc: ServiceStatus): string {
   return svc.status;
 }
 
-export default function ServiceHealth() {
+export function ServiceHealth() {
   const [services, setServices] = useState<ServiceStatus[] | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function poll() {
-      try {
-        const data = await getServicesHealth();
-        if (!cancelled) setServices(data);
-      } catch {
-        // fail silently — don't disrupt main app
-      }
+  const poll = useCallback(async () => {
+    try {
+      const data = await getServicesHealth();
+      setServices(data);
+    } catch {
+      // fail silently
     }
-
-    poll();
-    const id = setInterval(poll, REFRESH_MS);
-    return () => { cancelled = true; clearInterval(id); };
   }, []);
+
+  usePolling(poll, REFRESH_MS);
 
   if (!services) return null;
 

@@ -1,266 +1,77 @@
-import { useState, useRef, useCallback } from 'react';
-import { analyzeText, fetchVoices, pollStatus, startSynthesis, Voice, Segment, StatusResponse, NodeStatus, ClipInfo } from './api';
+import { usePipeline } from './hooks/usePipeline';
 import { AnalyzeForm } from './components/AnalyzeForm';
-import { StatusProgress, PhaseState } from './components/StatusProgress';
+import { StatusProgress } from './components/StatusProgress';
 import { VoiceCast } from './components/VoiceCast';
 import { AudioPlayer } from './components/AudioPlayer';
 import { PostProduction } from './components/PostProduction';
-import ServiceHealth from './components/ServiceHealth';
+import { ServiceHealth } from './components/ServiceHealth';
 import { PipelineMap } from './components/PipelineMap';
 import { VoiceManager } from './components/VoiceManager';
 
-type AppPhase = 'idle' | 'analyzing' | 'voice-cast' | 'synthesizing' | 'done';
-
-function uuid(): string {
-  return ([1e7] as unknown as string + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, (c: string) => {
-    const n = parseInt(c);
-    return (n ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (n / 4)))).toString(16);
-  });
-}
-
-interface Phases {
-  analyzing:    PhaseState;
-  synthesizing: PhaseState;
-  assembling:   PhaseState;
-}
-
-const INITIAL_PHASES: Phases = {
-  analyzing:    { state: 'pending', detail: 'Identifying speakers, emotions, and segments…' },
-  synthesizing: { state: 'pending', detail: 'Waiting for analysis to complete…' },
-  assembling:   { state: 'pending', detail: 'Waiting…' },
-};
-
 export default function App() {
-  const [phase, setPhase]             = useState<AppPhase>('idle');
-  const [phases, setPhases]           = useState<Phases>(INITIAL_PHASES);
-  const [error, setError]             = useState<string>('');
-  const [voices, setVoices]           = useState<Voice[]>([]);
-  const [segments, setSegments]       = useState<Segment[]>([]);
-  const [outputFile, setOutputFile]   = useState<string>('');
-  const [nodes, setNodes]             = useState<Record<string, NodeStatus> | undefined>(undefined);
-  const [activeJobId, setActiveJobId] = useState<string>('');
-  const [clips, setClips]             = useState<ClipInfo[]>([]);
-  const [voiceMapping, setVoiceMapping]   = useState<Record<string, string>>({});
-  const [engineMapping, setEngineMapping] = useState<Record<string, string>>({});
-  const [audioVersion, setAudioVersion]   = useState(0);
-  const [voiceManagerOpen, setVoiceManagerOpen] = useState(false);
+  const pipeline = usePipeline();
 
-  const jobIdRef   = useRef<string>('');
-  const pollRef    = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const updatePhase = useCallback((
-    key: keyof Phases,
-    state: PhaseState['state'],
-    detail?: string,
-  ) => {
-    setPhases(prev => ({
-      ...prev,
-      [key]: { state, detail: detail ?? prev[key].detail },
-    }));
-  }, []);
-
-  const stopPolling = useCallback(() => {
-    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-  }, []);
-
-  const handlePollResult = useCallback((status: StatusResponse) => {
-    const { phase: p, status: st, segments: segs, total, output_file, error: err, nodes: n } = status;
-
-    if (n) setNodes(prev => {
-      const merged: Record<string, NodeStatus> = { ...prev };
-      const now = Math.floor(Date.now() / 1000);
-      for (const [key, val] of Object.entries(n)) {
-        const mergedNode = { ...(prev?.[key] ?? {}), ...val };
-        // Clear stale finished from a previous run when a node restarts
-        if (val.status === 'running') {
-          delete mergedNode.finished;
-        }
-        // If transitioning to done without a finished timestamp, capture current time
-        if (mergedNode.status === 'done' && !mergedNode.finished && mergedNode.started) {
-          mergedNode.finished = now;
-        }
-        merged[key] = mergedNode;
-      }
-      return merged;
-    });
-
-    if (err) {
-      updatePhase('analyzing', 'error', err);
-      setError('Pipeline error: ' + err);
-      stopPolling();
-      return;
-    }
-
-    if (p === 'analyzing') {
-      if (st === 'running') {
-        updatePhase('analyzing', 'running', 'LLM is parsing the chapter…');
-      } else if (st === 'done') {
-        stopPolling();
-        const count = segs ? segs.length : '?';
-        updatePhase('analyzing', 'done', `Found ${count} segments`);
-        setSegments(segs ?? []);
-        setPhase('voice-cast');
-      }
-    } else if (p === 'synthesizing') {
-      if (st === 'running') {
-        const info = total ? ` — ${total} segments` : '';
-        updatePhase('synthesizing', 'running', `Generating voices${info}…`);
-      } else if (st === 'done') {
-        updatePhase('synthesizing', 'done', 'All segments synthesized');
-        updatePhase('assembling', 'running', 'Joining audio clips…');
-      }
-    } else if (p === 'done') {
-      updatePhase('synthesizing', 'done', 'All segments synthesized');
-      updatePhase('assembling', 'done', 'Audiobook ready');
-      stopPolling();
-      setOutputFile(output_file ?? '');
-      if (status.clips) setClips(status.clips);
-      if (status.voice_mapping) setVoiceMapping(status.voice_mapping);
-      if (status.engine_mapping) setEngineMapping(status.engine_mapping);
-      setPhase('done');
-    }
-  }, [updatePhase, stopPolling]);
-
-  const startPoll = useCallback((jobId: string) => {
-    pollRef.current = setInterval(async () => {
-      if (jobId !== jobIdRef.current) return;
-      try {
-        const status = await pollStatus(jobId);
-        if (status) handlePollResult(status);
-      } catch { /* ignore transient errors */ }
-    }, 4000);
-  }, [handlePollResult]);
-
-  const handleAnalyze = useCallback(async (title: string, text: string) => {
-    stopPolling();
-    setError('');
-    setOutputFile('');
-    setPhase('analyzing');
-    setPhases({
-      analyzing:    { state: 'running', detail: 'Sending to LLM for analysis…' },
-      synthesizing: { state: 'pending', detail: 'Waiting for analysis to complete…' },
-      assembling:   { state: 'pending', detail: 'Waiting…' },
-    });
-
-    const jobId = uuid();
-    jobIdRef.current = jobId;
-    setActiveJobId(jobId);
-    setNodes(undefined);
-
-    const [analyzeResult, fetchedVoices] = await Promise.allSettled([
-      analyzeText(title, text, jobId),
-      fetchVoices('xtts'),
-    ]);
-
-    if (fetchedVoices.status === 'fulfilled') {
-      setVoices(fetchedVoices.value);
-    }
-
-    if (analyzeResult.status === 'rejected') {
-      const e = analyzeResult.reason;
-      setError('Failed to reach the pipeline. ' + (e instanceof Error ? e.message : String(e)));
-      setPhase('idle');
-      return;
-    }
-
-    startPoll(jobId);
-  }, [stopPolling, startPoll]);
-
-  const handleGenerate = useCallback(async (
-    voiceMapping: Record<string, string>,
-    engineMapping: Record<string, string>,
-    skipScriptAdapter: boolean,
-    editedSegments: Segment[],
-  ) => {
-    stopPolling();
-    setError('');
-    setOutputFile('');
-    setPhase('synthesizing');
-    setPhases((prev: Phases) => ({
-      ...prev,
-      synthesizing: { state: 'running', detail: 'Sending to voice synthesis…' },
-      assembling:   { state: 'pending', detail: 'Waiting…' },
-    }));
-
-    // Reuse the same job ID so the pipeline map stays continuous from analyze → synthesize
-    const jobId = jobIdRef.current;
-
-    // Capture mappings early so PostProduction has them even if status doesn't include them
-    setVoiceMapping(voiceMapping);
-    setEngineMapping(engineMapping);
-
-    try {
-      await startSynthesis(editedSegments, voiceMapping, engineMapping, jobId, skipScriptAdapter);
-    } catch (e: unknown) {
-      setError('Failed to start synthesis: ' + (e instanceof Error ? e.message : String(e)));
-      setPhase('voice-cast');
-      return;
-    }
-
-    startPoll(jobId);
-  }, [segments, stopPolling, startPoll]);
-
-  const showProgress  = phase !== 'idle';
-  const showVoiceCast = segments.length > 0 && phase !== 'idle' && phase !== 'analyzing';
-  const showResult    = phase === 'done';
+  const showProgress  = pipeline.phase !== 'idle';
+  const showVoiceCast = pipeline.segments.length > 0 && pipeline.phase !== 'idle' && pipeline.phase !== 'analyzing';
+  const showResult    = pipeline.phase === 'done';
 
   return (
     <>
       <header className="app-header">
         <h1>Audiobook <span>Generator</span></h1>
         <p>Paste your chapter text and generate a fully narrated audiobook with distinct character voices.</p>
-        <button className="vm-trigger-btn" onClick={() => setVoiceManagerOpen(true)}>
+        <button className="vm-trigger-btn" onClick={() => pipeline.setVoiceManagerOpen(true)}>
           Manage Voices
         </button>
       </header>
 
       <VoiceManager
-        open={voiceManagerOpen}
-        onClose={() => setVoiceManagerOpen(false)}
-        onVoicesChanged={setVoices}
+        open={pipeline.voiceManagerOpen}
+        onClose={() => pipeline.setVoiceManagerOpen(false)}
+        onVoicesChanged={pipeline.setVoices}
       />
 
       <ServiceHealth />
 
-      <PipelineMap nodes={nodes} jobId={activeJobId} />
+      <PipelineMap nodes={pipeline.nodes} jobId={pipeline.activeJobId} />
 
       <AnalyzeForm
-        onAnalyze={handleAnalyze}
-        disabled={phase !== 'idle' && phase !== 'done'}
-        error={error}
+        onAnalyze={pipeline.handleAnalyze}
+        disabled={pipeline.phase !== 'idle' && pipeline.phase !== 'done'}
+        error={pipeline.error}
       />
 
       {showProgress && (
         <StatusProgress
-          analyzing={phases.analyzing}
-          synthesizing={phases.synthesizing}
-          assembling={phases.assembling}
+          analyzing={pipeline.phases.analyzing}
+          synthesizing={pipeline.phases.synthesizing}
+          assembling={pipeline.phases.assembling}
         />
       )}
 
       {showVoiceCast && (
         <VoiceCast
-          segments={segments}
-          voices={voices}
-          onGenerate={handleGenerate}
-          disabled={phase === 'synthesizing'}
+          segments={pipeline.segments}
+          voices={pipeline.voices}
+          onGenerate={pipeline.handleGenerate}
+          disabled={pipeline.phase === 'synthesizing'}
         />
       )}
 
-      {showResult && outputFile && (
-        <AudioPlayer filename={outputFile} version={audioVersion} />
+      {showResult && pipeline.outputFile && (
+        <AudioPlayer filename={pipeline.outputFile} version={pipeline.audioVersion} />
       )}
 
-      {showResult && clips.length > 0 && (
+      {showResult && pipeline.clips.length > 0 && (
         <PostProduction
-          segments={segments}
-          clips={clips}
-          voiceMapping={voiceMapping}
-          engineMapping={engineMapping}
-          voices={voices}
-          outputFile={outputFile}
-          onClipsChange={setClips}
-          onOutputFileChange={(f: string) => { setOutputFile(f); setAudioVersion((v: number) => v + 1); }}
+          segments={pipeline.segments}
+          clips={pipeline.clips}
+          voiceMapping={pipeline.voiceMapping}
+          engineMapping={pipeline.engineMapping}
+          voices={pipeline.voices}
+          outputFile={pipeline.outputFile}
+          onClipsChange={pipeline.setClips}
+          onOutputFileChange={(f: string) => { pipeline.setOutputFile(f); pipeline.setAudioVersion((v: number) => v + 1); }}
         />
       )}
     </>
