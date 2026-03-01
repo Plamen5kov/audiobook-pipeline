@@ -2,6 +2,7 @@ import logging
 import os
 import subprocess
 import tempfile
+import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -26,6 +27,7 @@ MODEL_ID = os.getenv("MODEL_ID", "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 tts_model: Qwen3TTSModel | None = None
+_infer_lock = threading.Lock()
 _voice_profiles: dict = {}
 
 # Fallback Qwen speaker when voice-cast.yaml has no qwen_speaker for a character.
@@ -217,7 +219,7 @@ def synthesize(request: SynthesizeRequest):
 
     qwen_speaker, instruct = _resolve_speaker_and_instruct(request)
 
-    output_filename = f"seg{request.segment_id:04d}_{request.speaker}.wav"
+    output_filename = f"seg{request.segment_id:04d}.wav"
     output_path = os.path.join(OUTPUT_DIR, output_filename)
 
     log.info(
@@ -226,11 +228,12 @@ def synthesize(request: SynthesizeRequest):
     )
 
     start = time.monotonic()
-    try:
-        _generate_audio(request.text, qwen_speaker, instruct, output_path, request.speed)
-    except Exception as exc:
-        log.error("synthesis failed: segment_id=%d error=%s", request.segment_id, exc)
-        raise HTTPException(status_code=500, detail=f"TTS generation failed: {exc}")
+    with _infer_lock:
+        try:
+            _generate_audio(request.text, qwen_speaker, instruct, output_path, request.speed)
+        except Exception as exc:
+            log.error("synthesis failed: segment_id=%d error=%s", request.segment_id, exc)
+            raise HTTPException(status_code=500, detail=f"TTS generation failed: {exc}")
     duration_s = time.monotonic() - start
 
     log.info(

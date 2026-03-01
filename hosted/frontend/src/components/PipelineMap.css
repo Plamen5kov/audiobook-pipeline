@@ -21,7 +21,7 @@
 .pipeline-row {
   display: flex;
   align-items: center;
-  gap: 0;
+  gap: 8px;
   flex-wrap: wrap;
   justify-content: center;
 }

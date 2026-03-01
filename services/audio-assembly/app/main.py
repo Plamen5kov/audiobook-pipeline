@@ -1,3 +1,4 @@
+import glob
 import logging
 import os
 import uuid
@@ -34,6 +35,18 @@ class AssembleRequest(BaseModel):
     target_dbfs: float = -20.0
 
 
+def _find_latest_segment_file(original_path: str, segment_id: int) -> str | None:
+    """Find the most recently modified wav for a given segment ID when the
+    expected file is missing (e.g. speaker name changed after re-synthesis)."""
+    directory = os.path.dirname(original_path) or INTERMEDIATE_DIR
+    pattern = os.path.join(directory, f"seg{segment_id:04d}_*.wav")
+    candidates = glob.glob(pattern)
+    if not candidates:
+        return None
+    # Pick the most recently modified file.
+    return max(candidates, key=os.path.getmtime)
+
+
 @app.post("/assemble")
 def assemble(request: AssembleRequest):
     if not request.clips:
@@ -47,7 +60,14 @@ def assemble(request: AssembleRequest):
 
     for clip in clips_sorted:
         if not os.path.exists(clip.file_path):
-            raise HTTPException(status_code=400, detail=f"Audio file not found: {clip.file_path}")
+            # The clip path may be stale if the speaker changed between analysis
+            # and synthesis.  Find the most recent file for this segment ID.
+            resolved = _find_latest_segment_file(clip.file_path, clip.id)
+            if resolved:
+                log.warning("  clip %d: %s not found, using %s", clip.id, clip.file_path, resolved)
+                clip.file_path = resolved
+            else:
+                raise HTTPException(status_code=400, detail=f"Audio file not found: {clip.file_path}")
 
         segment_audio = AudioSegment.from_file(clip.file_path)
         log.info("  clip %d: %s (pause=%dms, dur=%dms)",

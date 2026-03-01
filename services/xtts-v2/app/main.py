@@ -1,5 +1,6 @@
 import logging
 import os
+import threading
 import time
 from contextlib import asynccontextmanager
 
@@ -42,6 +43,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # Model loads on startup.
 tts_model: TTS | None = None
+_infer_lock = threading.Lock()
 
 VOICE_CAST_PATH = os.getenv("VOICE_CAST_PATH", "/voice-cast.yaml")
 DEFAULT_VOICE = "/voices/xtts/generic_neutral.wav"
@@ -146,7 +148,7 @@ def synthesize(request: SynthesizeRequest):
 
     ref = _resolve_reference_audio(request)
 
-    output_filename = f"seg{request.segment_id:04d}_{request.speaker}.wav"
+    output_filename = f"seg{request.segment_id:04d}.wav"
     output_path = os.path.join(OUTPUT_DIR, output_filename)
 
     log.info(
@@ -155,11 +157,12 @@ def synthesize(request: SynthesizeRequest):
     )
 
     start = time.monotonic()
-    try:
-        _generate_audio(request.text, ref, request.speed, output_path)
-    except Exception as exc:
-        log.error("synthesis failed: segment_id=%d error=%s", request.segment_id, exc)
-        raise HTTPException(status_code=500, detail=f"TTS generation failed: {exc}")
+    with _infer_lock:
+        try:
+            _generate_audio(request.text, ref, request.speed, output_path)
+        except Exception as exc:
+            log.error("synthesis failed: segment_id=%d error=%s", request.segment_id, exc)
+            raise HTTPException(status_code=500, detail=f"TTS generation failed: {exc}")
     duration_s = time.monotonic() - start
 
     log.info(

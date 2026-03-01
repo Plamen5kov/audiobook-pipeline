@@ -67,12 +67,11 @@ export function PipelineMap({ nodes, jobId }: Props) {
 
   return (
     <div className="pipeline-map">
-      {jobId && <span className="pipeline-job-id">Job: {jobId.slice(0, 8)}\u2026</span>}
+      {jobId && <span className="pipeline-job-id">Job: {jobId.slice(0, 8)}</span>}
       <div className="pipeline-row">
         {NODE_ORDER.map((name, i) => (
           <span key={name} className="pipeline-item">
             <NodeBlock name={name} node={nodes[name]} now={now} />
-            {i < NODE_ORDER.length - 1 && <span className="pipeline-arrow">\u2192</span>}
           </span>
         ))}
       </div>
