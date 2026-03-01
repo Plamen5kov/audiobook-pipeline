@@ -1117,6 +1117,49 @@ details[open] > .segments-editor-summary::before {
 
 .vm-mic-icon { font-size: 1.1rem; }
 
+.vm-rec-guide {
+  margin-top: 10px;
+  padding: 14px 16px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.vm-rec-guide-title {
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+  margin-top: 8px;
+}
+
+.vm-rec-guide-title:first-child { margin-top: 0; }
+
+.vm-rec-guide ul {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 6px;
+}
+
+.vm-rec-guide li::before {
+  content: "\2022";
+  color: var(--accent);
+  margin-right: 6px;
+}
+
+.vm-rec-sample {
+  margin: 6px 0 0;
+  padding: 10px 14px;
+  background: var(--surface);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  font-style: italic;
+  color: var(--text);
+  line-height: 1.6;
+}
+
 .vm-rec-active {
   display: flex;
   align-items: center;
@@ -1125,6 +1168,11 @@ details[open] > .segments-editor-summary::before {
   background: var(--surface2);
   border: 1px solid #e74c3c;
   border-radius: 10px;
+}
+
+.vm-rec-target {
+  font-size: 0.78rem;
+  color: var(--text-dim);
 }
 
 .vm-rec-dot {

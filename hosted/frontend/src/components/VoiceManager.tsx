@@ -322,7 +322,31 @@ export function VoiceManager({ open, onClose, onVoicesChanged }: Props) {
             <div className="vm-rec-active">
               <span className="vm-rec-dot" />
               <span className="vm-rec-time">{formatTime(recordSecs)}</span>
+              <span className="vm-rec-target">{recordSecs < 10 ? 'Keep going — aim for 10s' : recordSecs <= 15 ? 'Good length!' : 'You can stop now'}</span>
               <button className="vm-rec-stop" onClick={stopRecording}>Stop</button>
+            </div>
+          )}
+
+          {!recordedBlob && (
+            <div className="vm-rec-guide">
+              {!recording && (
+                <>
+                  <p className="vm-rec-guide-title">Recording tips</p>
+                  <ul>
+                    <li>Aim for <strong>10 &ndash; 15 seconds</strong> of clear speech</li>
+                    <li>Use a quiet room &mdash; avoid echo and background noise</li>
+                    <li>Hold the mic 15 &ndash; 20 cm from your mouth</li>
+                    <li>Speak at a natural, steady pace</li>
+                  </ul>
+                </>
+              )}
+              <p className="vm-rec-guide-title">Read this aloud:</p>
+              <blockquote className="vm-rec-sample">
+                &ldquo;The old house at the edge of the village had been silent for years.
+                On rainy evenings, shadows danced behind its dusty windows, and the
+                creaking gate swung gently in the breeze. No one dared to knock,
+                yet everyone wondered what stories those crumbling walls still held.&rdquo;
+              </blockquote>
             </div>
           )}
 
