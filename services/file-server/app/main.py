@@ -46,6 +46,16 @@ def _engine_dir(engine: str) -> str:
     return os.path.join(VOICES_DIR, engine)
 
 
+def _builtin_voices(engine: str) -> set[str]:
+    """Read the .builtin manifest for an engine (cached after first call)."""
+    manifest = os.path.join(VOICES_DIR, engine, ".builtin")
+    try:
+        with open(manifest) as f:
+            return {line.strip() for line in f if line.strip()}
+    except FileNotFoundError:
+        return set()
+
+
 @app.get("/voices/{engine}")
 async def list_voices(engine: str):
     """List all WAV files available for a given engine."""
@@ -54,7 +64,8 @@ async def list_voices(engine: str):
         files = sorted(f for f in os.listdir(engine_path) if f.endswith(".wav"))
     except FileNotFoundError:
         return []
-    return [{"name": f[:-4], "filename": f} for f in files]
+    builtin = _builtin_voices(engine)
+    return [{"name": f[:-4], "filename": f, "builtin": f in builtin} for f in files]
 
 
 @app.post("/voices/upload/{engine}")
@@ -86,6 +97,21 @@ async def get_voice(engine: str, filename: str):
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail=f"Voice file not found: {engine}/{filename}")
     return FileResponse(path, media_type="audio/wav", filename=filename)
+
+
+@app.delete("/voices/{engine}/{filename}")
+async def delete_voice(engine: str, filename: str):
+    """Delete a voice file."""
+    engine_path = _engine_dir(engine)
+    filename = _safe_filename(filename)
+    path = os.path.join(engine_path, filename)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail=f"Voice file not found: {engine}/{filename}")
+    if filename in _builtin_voices(engine):
+        raise HTTPException(status_code=403, detail="Cannot delete built-in voice")
+    os.remove(path)
+    log.info("Deleted voice: %s/%s", engine, filename)
+    return {"ok": True, "deleted": f"{engine}/{filename}"}
 
 
 @app.get("/audio/{filename}")

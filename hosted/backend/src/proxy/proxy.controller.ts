@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Param, Req, Res, UploadedFile,
+  Controller, Get, Post, Delete, Param, Req, Res, UploadedFile,
   UseInterceptors, HttpCode, HttpStatus,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -36,6 +36,12 @@ export class ProxyController {
     const { stream, status, headers } = await this.proxy.streamAudio(`/voices/${engine}/${filename}`, req.headers['range'] as string | undefined);
     res.status(status).set({ 'Content-Type': 'audio/wav', ...headers });
     stream.pipe(res);
+  }
+
+  @Delete('voices/:engine/:filename')
+  async deleteVoice(@Param('engine') engine: string, @Param('filename') filename: string) {
+    const { data } = await this.proxy.forwardJson('DELETE', `/voices/${engine}/${filename}`);
+    return data;
   }
 
   // ── Audio output ──────────────────────────────────────────────

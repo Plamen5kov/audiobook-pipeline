@@ -7,6 +7,7 @@ import { AudioPlayer } from './components/AudioPlayer';
 import { PostProduction } from './components/PostProduction';
 import ServiceHealth from './components/ServiceHealth';
 import { PipelineMap } from './components/PipelineMap';
+import { VoiceManager } from './components/VoiceManager';
 
 type AppPhase = 'idle' | 'analyzing' | 'voice-cast' | 'synthesizing' | 'done';
 
@@ -42,6 +43,7 @@ export default function App() {
   const [voiceMapping, setVoiceMapping]   = useState<Record<string, string>>({});
   const [engineMapping, setEngineMapping] = useState<Record<string, string>>({});
   const [audioVersion, setAudioVersion]   = useState(0);
+  const [voiceManagerOpen, setVoiceManagerOpen] = useState(false);
 
   const jobIdRef   = useRef<string>('');
   const pollRef    = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -207,7 +209,16 @@ export default function App() {
       <header className="app-header">
         <h1>Audiobook <span>Generator</span></h1>
         <p>Paste your chapter text and generate a fully narrated audiobook with distinct character voices.</p>
+        <button className="vm-trigger-btn" onClick={() => setVoiceManagerOpen(true)}>
+          Manage Voices
+        </button>
       </header>
+
+      <VoiceManager
+        open={voiceManagerOpen}
+        onClose={() => setVoiceManagerOpen(false)}
+        onVoicesChanged={setVoices}
+      />
 
       <ServiceHealth />
 

@@ -1,7 +1,7 @@
 import { Injectable, HttpException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosError } from 'axios';
-import FormData from 'form-data';
+import * as FormData from 'form-data';
 import { Readable } from 'stream';
 
 export interface AudioStream {
@@ -19,7 +19,7 @@ export class ProxyService {
   }
 
   /** Forward a JSON request to the DGX and return the parsed response body. */
-  async forwardJson(method: 'GET' | 'POST', path: string, body?: Buffer): Promise<{ data: unknown; status: number }> {
+  async forwardJson(method: 'GET' | 'POST' | 'DELETE', path: string, body?: Buffer): Promise<{ data: unknown; status: number }> {
     try {
       const res = await axios.request({
         method,

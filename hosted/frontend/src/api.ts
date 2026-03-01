@@ -6,6 +6,7 @@ const BASE = (import.meta.env.VITE_BACKEND_URL as string | undefined ?? '').repl
 export interface Voice {
   name: string;
   filename: string;
+  builtin?: boolean;
 }
 
 export interface Segment {
@@ -161,4 +162,27 @@ export async function reStitch(params: ReStitchRequest): Promise<ReStitchRespons
   });
   if (!res.ok) throw new Error(`Re-stitch error: ${res.status}`);
   return res.json();
+}
+
+// ── Voice management ──────────────────────────────────────────
+
+export async function uploadVoice(engine: string, file: File): Promise<Voice> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`${BASE}/voices/upload/${engine}`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`Upload failed (${res.status}): ${detail}`);
+  }
+  return res.json();
+}
+
+export async function deleteVoice(engine: string, filename: string): Promise<void> {
+  const res = await fetch(`${BASE}/voices/${engine}/${filename}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
 }
