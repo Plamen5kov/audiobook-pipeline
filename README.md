@@ -40,9 +40,9 @@ Adding a new engine: one Docker service + one entry in `TTS_BACKENDS` env var. Z
 
 ## Text Analyzer
 
-9-node hybrid pipeline (7 deterministic + 2 AI):
+10-node hybrid pipeline (8 deterministic + 2 AI):
 
-- **Deterministic**: segment splitting (state machine), speaker attribution (regex), turn-taking heuristic, character registry, pause timing, validation, narration defaults
+- **Deterministic**: segment splitting (state machine), speaker attribution (regex), turn-taking heuristic, character registry, pause timing, validation, narration defaults, text normalisation
 - **AI** (Ollama): ambiguous speaker resolution, emotion classification
 
 Programmatic nodes run in ~50ms. AI nodes take 5-20s depending on chapter length.
@@ -55,6 +55,17 @@ ordering before it runs rather than failing part-way through a chapter. Dropping
 
 Nodes that need a language model receive an `LLMClient`, not a URL, so the whole pipeline runs
 in tests against a scripted fake with no Ollama and no network.
+
+Each segment carries two texts. `original_text` is the prose, verbatim, which is what the
+validation node proves still reconstructs the source. `spoken_text` is what the synthesiser is
+actually given: scene breaks removed and turned into silence, bracket tags unwrapped, stat-block
+debris cleared, ratios read as words. QA compares the transcript against the spoken form, since
+that is what was meant to be said.
+
+Pronunciation that no rule can derive goes in a per-book lexicon on the context
+(`AnalysisContext.lexicon`), a plain term-to-spoken-form mapping. Acronyms live there rather than
+in a pattern: these chapters contain `CIA` and `EDJI`, which want spelling out, beside `THAT` for
+emphasis and `II` as a numeral, which do not.
 
 ## Tech Stack
 
@@ -103,7 +114,7 @@ audiobook-pipeline/
     frontend/          React + Vite PWA
     backend/           NestJS API gateway
   services/
-    text-analyzer/     Hybrid 9-node analysis pipeline
+    text-analyzer/     Hybrid 10-node analysis pipeline
     file-server/       Pipeline orchestrator + file serving
     xtts-v2/           XTTS v2 TTS service
     qwen3-tts/         Qwen3-TTS service

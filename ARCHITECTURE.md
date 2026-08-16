@@ -61,7 +61,7 @@ Each box is a **Docker container** exposing a **FastAPI HTTP API**. The **file-s
 
 - **Input:** Plain text (a chapter or section)
 - **Output:** JSON with character registry + ordered segments + pipeline report
-- **Architecture:** 9-node pipeline — 7 deterministic (programmatic) nodes + 2 AI nodes (Ollama), assembled from a registry and checked for ordering before it runs
+- **Architecture:** 10-node pipeline — 8 deterministic (programmatic) nodes + 2 AI nodes (Ollama), assembled from a registry and checked for ordering before it runs
 
 The text analyzer uses a **hybrid approach** that combines deterministic parsing for accuracy
 and speed with targeted LLM calls only where language understanding is genuinely required.
@@ -81,6 +81,7 @@ guards to fix fabrication, misattribution, and verbatim-text violations.
 | 7 | **AI Attribution** | ai (Ollama) | Resolves remaining unknown speakers by sending surrounding context + character list to a small LLM. Returns only speaker names — no text generation. |
 | 8 | **Emotion Classifier** | ai (Ollama) | Batched LLM call classifies emotion + intensity for all segments. Allowed values: neutral, happy, sad, angry, fearful, excited, tense, contemplative. |
 | 9 | **Narration Defaults** | programmatic | Forces narration back to a neutral delivery after classification. One performer reads the whole book, so a per-paragraph emotion would make the narration lurch. |
+| 10 | **Normalisation** | programmatic | Writes `spoken_text`: the words to say, as opposed to the words on the page. Removes scene-break rules (and lengthens the pause in their place), unwraps bracket tags, clears stat-block debris, reads ratios as words, applies the per-book pronunciation lexicon. `original_text` is left verbatim. |
 
 The numbers are the default order, not an identity: the pipeline is built from `DEFAULT_PIPELINE` and can be edited with `insert_before`, `insert_after`, `replace` and `remove`. Each node declares `requires` and `assigns`, and `Pipeline.problems()` reports an order that cannot work before any text is processed. The check believes what a node declares, so a wrong declaration hides a real problem.
 
@@ -109,6 +110,7 @@ services/text-analyzer/app/
     ai_attribution.py            — Node 7: LLM-based ambiguous speaker resolution
     emotion_classifier.py        — Node 8: batched LLM emotion classification
     narration_defaults.py        — Node 9: forces narration to a neutral delivery
+    normalisation.py             — Node 10: spoken form of each segment
   data/
     speech_verbs.txt             — ~100 speech verbs for Node 2 (said, whispered, shouted, etc.)
   prompts/
@@ -350,7 +352,7 @@ The `hosted/` directory contains the user-facing web application:
 | Service          | Port  | GPU | Description                         |
 |------------------|-------|-----|-------------------------------------|
 | ollama           | 11435 | Yes | Shared LLM backend (host port 11435 → internal 11434) |
-| text-analyzer    | 8001  | No  | Hybrid pipeline: 7 programmatic nodes + 2 AI nodes (Ollama) |
+| text-analyzer    | 8001  | No  | Hybrid pipeline: 8 programmatic nodes + 2 AI nodes (Ollama) |
 | xtts-v2          | 8003  | Yes | FastAPI + XTTS v2 (voice cloning)   |
 | qwen3-tts        | 8007  | Yes | FastAPI + Qwen3-TTS-12Hz-1.7B (predefined voices + instruct) |
 | tts-router       | 8010  | No  | HTTP proxy — routes /synthesize to correct TTS backend |
@@ -462,6 +464,7 @@ qwen3-tts) have a 120s `start_period` to allow model loading.
 - **2026-02-17:** Initial architecture document created. Defined 6-stage pipeline, MVP scope, and phased roadmap.
 - **2026-02-24:** Added TTS Router (`tts-router:8010`) and Qwen3-TTS (`qwen3-tts:8007`). Introduced `engine` field in shared `SynthesizeRequest` contract. voice-cast.yaml `tts_service` field now drives engine selection per character via n8n code node. Updated pipeline diagram, services table, Phase 3 status.
 - **2026-02-26:** Replaced text-analyzer's monolithic LLM approach with an 8-node hybrid pipeline. 6 programmatic nodes handle segment splitting (state machine), speaker attribution (regex + turn-taking heuristic), character registry, pause timing, and validation. 2 AI nodes handle ambiguous speaker resolution and emotion classification via targeted Ollama calls. Added per-node `report` field to the API response for timing/attribution breakdown. Same API contract — downstream services unchanged.
+- **2026-08-16:** Added the normalisation node, the first built on the new node contract. Segments now carry `spoken_text` beside `original_text`: the synthesiser and QA use the spoken form, validation keeps proving the verbatim one reconstructs the source. Measured on the chapters to be narrated, 130 `***` scene breaks were reaching TTS as literal text; they are now removed and the beat survives as a scene-break pause. The stat block QA caught being synthesised as "Item I can send in rank legendary consumable effect uses remaining 101 bako" now reads as "Item: World-Phoenix Token, transcendent rank, legendary. (consumable). Uses remaining: one out of one". Acronyms are deliberately not pattern-matched, since `THAT` and `II` occur alongside `CIA` and `EDJI`; they go through a per-book lexicon instead.
 - **2026-08-16:** Formalised the text-analyzer pipeline as a registry of nodes. Every node now satisfies one contract (`name`, `node_type`, `requires`, `assigns`, `run(ctx)`) and reads and writes a shared `AnalysisContext` instead of a bespoke argument list, so inserting a step is an edit to a list rather than a change to its neighbours. `Pipeline` holds the ordered nodes and offers `insert_before`, `insert_after`, `replace` and `remove`; `problems()` reports an unworkable order before anything runs, in the manner of spaCy's `analyze_pipes`. Node modules are discovered from the package, so adding one edits no existing file. The narration-neutral override that lived inside the runner became the `narration_defaults` node, taking the pipeline to 9. AI nodes now depend on an `LLMClient` protocol rather than an Ollama URL, which moved the transport out of `nodes/` and let the full pipeline be tested against a scripted fake with no network. Timing moved from a per-node decorator to the runner. Same API contract; the `report.nodes` list gains a ninth entry.
 - **2026-03-01:** Major refactoring across all layers:
   - **Removed n8n.** Pipeline orchestration moved to `services/file-server/app/orchestrator.py` — two async functions (`run_analyze`, `run_synthesize`) replace both n8n workflows. Parallel TTS via `asyncio.Semaphore`. Post-assembly intermediate file cleanup. Status-polling contract unchanged.

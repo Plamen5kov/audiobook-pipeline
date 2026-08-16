@@ -36,6 +36,7 @@ DEFAULT_PIPELINE: tuple[str, ...] = (
     "ai_attribution",
     "emotion_classifier",
     "narration_defaults",
+    "normalisation",
 )
 
 
@@ -149,6 +150,7 @@ async def run_analysis(ctx: AnalysisContext,
             "id": s.id,
             "speaker": s.speaker if s.kind == "dialogue" else "narrator",
             "original_text": s.original_text,
+            "spoken_text": s.spoken_text or s.original_text,
             "emotion": s.emotion,
             "intensity": round(s.intensity, 2),
             "pause_before_ms": s.pause_before_ms,

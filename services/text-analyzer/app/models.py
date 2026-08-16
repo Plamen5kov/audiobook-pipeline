@@ -24,6 +24,10 @@ class Segment:
     id: int
     kind: str  # "dialogue" | "narration"
     original_text: str
+    # What should actually be said. Written by the normalisation node; empty
+    # until it runs. `original_text` stays verbatim so validation can prove the
+    # segments still reconstruct the source.
+    spoken_text: str = ""
     speaker: str = "unknown"  # "narrator" | character name | "unknown"
     attribution_source: str = "none"  # "explicit" | "turn_taking" | "ai" | "pronoun" | "default"
     emotion: str = "neutral"
@@ -53,6 +57,10 @@ class AnalysisContext:
     segments: list[Segment] = field(default_factory=list)
     characters: list[dict] = field(default_factory=list)
     validation: Optional[dict] = None
+    # Per-book pronunciation overrides, applied by the normalisation node.
+    # Terms whose spoken form no rule can derive: acronyms, invented names,
+    # slang. Someone has to have listened to decide these.
+    lexicon: dict[str, str] = field(default_factory=dict)
     meta: dict[str, Any] = field(default_factory=dict)
 
 

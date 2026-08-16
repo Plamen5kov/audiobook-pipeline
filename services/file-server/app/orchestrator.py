@@ -188,7 +188,7 @@ async def run_synthesize(
             tts_requests.append({
                 "segment_id": seg["id"],
                 "speaker": speaker,
-                "text": seg.get("original_text", ""),
+                "text": seg.get("spoken_text") or seg.get("original_text", ""),
                 "reference_audio_path": reference_audio_path,
                 "engine": engine,
                 "qwen_speaker": qwen_speaker,
@@ -357,7 +357,8 @@ async def _run_qa(
     checks = [
         {
             "id": c["id"],
-            "text": by_id[c["id"]].get("original_text", ""),
+            "text": (by_id[c["id"]].get("spoken_text")
+                     or by_id[c["id"]].get("original_text", "")),
             "file_path": c["file_path"],
         }
         for c in clips

@@ -24,7 +24,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "services" / "text-analyzer"))
 
 from app.nodes import (  # noqa: E402
-    explicit_attribution, pause_timing, segment_splitter, turn_taking,
+    explicit_attribution, normalisation, pause_timing, segment_splitter,
+    turn_taking,
 )
 
 WORD = re.compile(r"[a-z']+")
@@ -60,6 +61,9 @@ def main() -> None:
     segments = explicit_attribution.attribute_explicit(segments)
     segments = turn_taking.apply_turn_taking(segments)
     segments = pause_timing.assign_pauses(segments)
+    # After the pauses, because dropping a scene-break marker has to leave the
+    # beat behind as silence.
+    segments = normalisation.normalise_segments(segments)
 
     # The two tools disagree on where a quote ends when one is split across
     # paragraphs, so an exact match misses those. Falling back to the opening
@@ -106,6 +110,7 @@ def main() -> None:
             "id": d["id"], "kind": d["kind"],
             "speaker": d["speaker"] if d["kind"] == "dialogue" else "narrator",
             "original_text": d["original_text"],
+            "spoken_text": d.get("spoken_text") or d["original_text"],
             "emotion": "neutral", "intensity": 0.5,
             "pause_before_ms": d.get("pause_before_ms", 0),
         })
