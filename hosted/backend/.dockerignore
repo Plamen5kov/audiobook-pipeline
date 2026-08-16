@@ -1,0 +1,7 @@
+# The image builds from source. Copying a host-built dist/ or node_modules in
+# makes the build non-hermetic: a stale dist can survive into the image and
+# silently ship code that is not in the repo.
+node_modules/
+dist/
+.env
+*.log

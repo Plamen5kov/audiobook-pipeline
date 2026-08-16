@@ -85,6 +85,27 @@ export class JobsController {
     stream.pipe(res);
   }
 
+  @Delete()
+  async deleteAll(@Query("confirm") confirm?: string): Promise<unknown> {
+    const suffix = confirm ? `?confirm=${encodeURIComponent(confirm)}` : "";
+    const { data } = await this.proxy.forwardJson(
+      "DELETE",
+      `/api/jobs${suffix}`,
+    );
+    return data;
+  }
+
+  @Delete(":jobId")
+  async deleteJob(
+    @Param("jobId", PathTraversalPipe) jobId: string,
+  ): Promise<unknown> {
+    const { data } = await this.proxy.forwardJson(
+      "DELETE",
+      `/api/jobs/${jobId}`,
+    );
+    return data;
+  }
+
   @Post(":jobId/redo")
   @HttpCode(HttpStatus.OK)
   async redo(
