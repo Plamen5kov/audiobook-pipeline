@@ -39,7 +39,9 @@ data/mbnlp/*
 voicebank/
 corpus/voicebank/
 # 4.5 GB coredump from the torchaudio forced_align segfault (fixed since).
-core
+# Anchored: a bare `core` matches any directory of that name, which silently
+# swallowed the whole core/ package.
+corpus/core
 
 # Test and tooling caches
 .pytest_cache/
