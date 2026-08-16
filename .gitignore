@@ -28,3 +28,15 @@ node_modules/
 # IDE
 .vscode/
 .idea/
+
+# Derived corpus artifacts. All regenerable, and the audio is cut from a
+# commercial audiobook, so it stays out of the repo. The attribution JSONL is
+# the exception: small, and the input to chapter generation.
+data/*
+!data/mbnlp/
+data/mbnlp/*
+!data/mbnlp/*.attributions.jsonl
+voicebank/
+corpus/voicebank/
+# 4.5 GB coredump from the torchaudio forced_align segfault (fixed since).
+core
