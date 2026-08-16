@@ -10,9 +10,9 @@ import json
 import logging
 from pathlib import Path
 
-from ..models import ALLOWED_EMOTIONS, Segment
-from ..timing import timed_node
-from .ollama_client import call_ollama
+from ..models import ALLOWED_EMOTIONS, AnalysisContext, Segment
+from .base import Node, register
+from ..llm import LLMClient
 
 log = logging.getLogger(__name__)
 
@@ -23,11 +23,9 @@ _USER_TEMPLATE = (_PROMPTS_DIR / "emotion_user.txt").read_text().strip()
 _BATCH_SIZE = 30
 
 
-@timed_node("emotion_classifier", "ai")
 async def classify_emotions(
     segments: list[Segment],
-    ollama_url: str,
-    model_name: str,
+    llm: LLMClient,
 ) -> list[Segment]:
     """Classify emotion for every segment using batched LLM calls.
 
@@ -63,7 +61,7 @@ async def classify_emotions(
         )
 
         try:
-            emotion_map = await _request_emotions(ollama_url, model_name, prompt)
+            emotion_map = await _request_emotions(llm, prompt)
         except Exception:
             log.exception("Emotion classifier LLM call failed for batch starting at %d",
                           batch_start)
@@ -80,13 +78,13 @@ async def classify_emotions(
 
 
 async def _request_emotions(
-    ollama_url: str, model_name: str, prompt: str
+    llm: LLMClient, prompt: str
 ) -> dict[int, tuple[str, float]]:
     """Send a batched emotion classification request to Ollama.
 
     Returns a dict mapping segment ID to (emotion, intensity).
     """
-    parsed = await call_ollama(ollama_url, model_name, _SYSTEM_PROMPT, prompt)
+    parsed = await llm.complete_json(_SYSTEM_PROMPT, prompt)
     emotions = parsed.get("emotions", [])
 
     result: dict[int, tuple[str, float]] = {}
@@ -100,3 +98,18 @@ async def _request_emotions(
             result[seg_id] = (emotion, float(intensity))
 
     return result
+
+
+@register
+class EmotionClassifierNode(Node):
+    """Label dialogue with an emotion for the synthesiser to act on."""
+
+    name = "emotion_classifier"
+    node_type = "ai"
+    requires = ("segments", "llm")
+    assigns = ("segments.emotion", "segments.intensity")
+
+    async def run(self, ctx: AnalysisContext) -> None:
+        if ctx.llm is None:
+            raise ValueError("emotion_classifier needs a language model on the context")
+        ctx.segments = await classify_emotions(ctx.segments, ctx.llm)

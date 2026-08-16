@@ -12,8 +12,8 @@ narration-only segments (indicating a scene or topic change).
 from __future__ import annotations
 
 import logging
-from ..models import Segment
-from ..timing import timed_node
+from ..models import AnalysisContext, Segment
+from .base import Node, register
 
 log = logging.getLogger(__name__)
 
@@ -22,7 +22,6 @@ log = logging.getLogger(__name__)
 _NARRATION_GAP_RESET = 2
 
 
-@timed_node("turn_taking", "programmatic")
 def apply_turn_taking(segments: list[Segment]) -> list[Segment]:
     """Resolve remaining ``speaker="unknown"`` dialogue segments using
     turn-taking alternation.
@@ -146,3 +145,15 @@ def _alternate_speakers(segments: list[Segment]) -> None:
             seg.speaker = assigned
             seg.attribution_source = "turn_taking"
             log.debug("Turn-taking (sole speaker): segment %d → %s", seg.id, assigned)
+
+
+@register
+class TurnTakingNode(Node):
+    """Resolve leftover speakers from conversational structure."""
+
+    name = "turn_taking"
+    requires = ("segments", "segments.speaker")
+    assigns = ("segments.speaker",)
+
+    async def run(self, ctx: AnalysisContext) -> None:
+        ctx.segments = apply_turn_taking(ctx.segments)

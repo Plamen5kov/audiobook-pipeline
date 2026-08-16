@@ -40,12 +40,21 @@ Adding a new engine: one Docker service + one entry in `TTS_BACKENDS` env var. Z
 
 ## Text Analyzer
 
-8-node hybrid pipeline (6 deterministic + 2 AI):
+9-node hybrid pipeline (7 deterministic + 2 AI):
 
-- **Deterministic**: segment splitting (state machine), speaker attribution (regex), turn-taking heuristic, character registry, pause timing, validation
+- **Deterministic**: segment splitting (state machine), speaker attribution (regex), turn-taking heuristic, character registry, pause timing, validation, narration defaults
 - **AI** (Ollama): ambiguous speaker resolution, emotion classification
 
 Programmatic nodes run in ~50ms. AI nodes take 5-20s depending on chapter length.
+
+The pipeline is a list of nodes, not a fixed sequence. Every node reads and writes one shared
+`AnalysisContext`, so a new step can be inserted anywhere without changing another node's
+signature. Nodes declare what they `requires` and `assigns`, and the pipeline checks that
+ordering before it runs rather than failing part-way through a chapter. Dropping a module into
+`app/nodes/` registers it; nothing keeps a list of modules in step.
+
+Nodes that need a language model receive an `LLMClient`, not a URL, so the whole pipeline runs
+in tests against a scripted fake with no Ollama and no network.
 
 ## Tech Stack
 
@@ -94,7 +103,7 @@ audiobook-pipeline/
     frontend/          React + Vite PWA
     backend/           NestJS API gateway
   services/
-    text-analyzer/     Hybrid 8-node analysis pipeline
+    text-analyzer/     Hybrid 9-node analysis pipeline
     file-server/       Pipeline orchestrator + file serving
     xtts-v2/           XTTS v2 TTS service
     qwen3-tts/         Qwen3-TTS service

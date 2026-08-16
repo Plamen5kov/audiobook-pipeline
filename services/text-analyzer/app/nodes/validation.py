@@ -9,13 +9,12 @@ from __future__ import annotations
 
 import logging
 import re
-from ..models import Segment
-from ..timing import timed_node
+from ..models import AnalysisContext, Segment
+from .base import Node, register
 
 log = logging.getLogger(__name__)
 
 
-@timed_node("validation", "programmatic")
 def validate_completeness(
     segments: list[Segment], original_text: str
 ) -> tuple[bool, list[str]]:
@@ -87,3 +86,16 @@ def _normalise(text: str) -> str:
     text = text.replace("\n", " ")
     text = re.sub(r"\s+", " ", text).strip()
     return text
+
+
+@register
+class ValidationNode(Node):
+    """Check the segments still reconstruct the source text, word for word."""
+
+    name = "validation"
+    requires = ("text", "segments")
+    assigns = ("validation",)
+
+    async def run(self, ctx: AnalysisContext) -> None:
+        passed, issues = validate_completeness(ctx.segments, ctx.text)
+        ctx.validation = {"passed": passed, "issues": issues}

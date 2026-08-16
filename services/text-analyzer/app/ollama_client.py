@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from dataclasses import dataclass
 
 import httpx
 
@@ -55,3 +56,14 @@ async def call_ollama(
 
     raw = resp.json().get("response", "")
     return json.loads(raw)
+
+
+@dataclass(frozen=True)
+class OllamaClient:
+    """The ``LLMClient`` the service runs with. Lives here, beside httpx."""
+
+    url: str
+    model: str
+
+    async def complete_json(self, system_prompt: str, user_prompt: str) -> dict:
+        return await call_ollama(self.url, self.model, system_prompt, user_prompt)

@@ -9,8 +9,8 @@ from __future__ import annotations
 import logging
 import re
 from collections import Counter
-from ..models import Segment
-from ..timing import timed_node
+from ..models import AnalysisContext, Segment
+from .base import Node, register
 
 log = logging.getLogger(__name__)
 
@@ -18,7 +18,6 @@ _MALE_PATTERN = re.compile(r"\b(he|him|his)\b", re.IGNORECASE)
 _FEMALE_PATTERN = re.compile(r"\b(she|her|hers)\b", re.IGNORECASE)
 
 
-@timed_node("character_registry", "programmatic")
 def build_character_registry(segments: list[Segment]) -> list[dict]:
     """Collect unique character names from segments and return a list
     in the format expected by the API: ``[{"name": ..., "description": ...}]``.
@@ -80,3 +79,15 @@ def build_character_registry(segments: list[Segment]) -> list[dict]:
     log.info("Character registry: %s",
              [c["name"] for c in result])
     return result
+
+
+@register
+class CharacterRegistryNode(Node):
+    """Collect the cast from whoever ended up attributed."""
+
+    name = "character_registry"
+    requires = ("segments", "segments.speaker")
+    assigns = ("characters",)
+
+    async def run(self, ctx: AnalysisContext) -> None:
+        ctx.characters = build_character_registry(ctx.segments)

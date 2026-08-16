@@ -14,9 +14,9 @@ import re
 from collections import Counter
 from pathlib import Path
 
-from ..models import Segment
-from ..timing import timed_node
-from .ollama_client import call_ollama
+from ..models import AnalysisContext, Segment
+from .base import Node, register
+from ..llm import LLMClient
 
 log = logging.getLogger(__name__)
 
@@ -56,12 +56,10 @@ def _scene_candidates(segments: list[Segment], indices: list[int],
     return sorted(present)
 
 
-@timed_node("ai_attribution", "ai")
 async def resolve_ambiguous_speakers(
     segments: list[Segment],
     characters: list[dict],
-    ollama_url: str,
-    model_name: str,
+    llm: LLMClient,
 ) -> list[Segment]:
     """Call the LLM for any dialogue segments still marked ``speaker="unknown"``.
 
@@ -121,7 +119,7 @@ async def resolve_ambiguous_speakers(
         )
 
         try:
-            attributions = await _request_attributions(ollama_url, model_name, prompt)
+            attributions = await _request_attributions(llm, prompt)
         except Exception:
             log.exception("AI attribution LLM call failed")
             attributions = []
@@ -154,10 +152,10 @@ async def resolve_ambiguous_speakers(
 
 
 async def _request_attributions(
-    ollama_url: str, model_name: str, prompt: str
+    llm: LLMClient, prompt: str
 ) -> list[dict]:
     """Send a single LLM call and return the ``attributions`` list."""
-    parsed = await call_ollama(ollama_url, model_name, _SYSTEM_PROMPT, prompt)
+    parsed = await llm.complete_json(_SYSTEM_PROMPT, prompt)
     return parsed.get("attributions", [])
 
 
@@ -201,3 +199,19 @@ def _extract_candidate_names(segments: list[Segment]) -> list[str]:
 
     # Return names that appear more than once (likely character names, not place names).
     return [name for name, count in name_counts.most_common(10) if count >= 2]
+
+
+@register
+class AIAttributionNode(Node):
+    """Ask the model about the dialogue nothing deterministic could place."""
+
+    name = "ai_attribution"
+    node_type = "ai"
+    requires = ("segments", "characters", "llm")
+    assigns = ("segments.speaker",)
+
+    async def run(self, ctx: AnalysisContext) -> None:
+        if ctx.llm is None:
+            raise ValueError("ai_attribution needs a language model on the context")
+        ctx.segments = await resolve_ambiguous_speakers(
+            ctx.segments, ctx.characters, ctx.llm)

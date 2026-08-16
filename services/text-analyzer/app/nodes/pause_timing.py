@@ -7,8 +7,8 @@ Assigns ``pause_before_ms`` to each segment based on structural cues
 from __future__ import annotations
 
 import logging
-from ..models import Segment
-from ..timing import timed_node
+from ..models import AnalysisContext, Segment
+from .base import Node, register
 
 log = logging.getLogger(__name__)
 
@@ -21,7 +21,6 @@ PAUSE_NARRATION_AFTER_DIALOGUE = 300
 PAUSE_DIALOGUE_TURN = 250         # consecutive dialogue in same paragraph
 
 
-@timed_node("pause_timing", "programmatic")
 def assign_pauses(segments: list[Segment]) -> list[Segment]:
     """Set ``pause_before_ms`` on every segment based on its structural
     relationship to the previous segment.
@@ -56,3 +55,15 @@ def assign_pauses(segments: list[Segment]) -> list[Segment]:
             seg.pause_before_ms = PAUSE_PARAGRAPH_BREAK
 
     return segments
+
+
+@register
+class PauseTimingNode(Node):
+    """Assign the silence before each segment from structural cues."""
+
+    name = "pause_timing"
+    requires = ("segments",)
+    assigns = ("segments.pause_before_ms",)
+
+    async def run(self, ctx: AnalysisContext) -> None:
+        ctx.segments = assign_pauses(ctx.segments)

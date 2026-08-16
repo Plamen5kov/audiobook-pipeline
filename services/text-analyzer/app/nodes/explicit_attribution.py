@@ -14,8 +14,8 @@ import logging
 import re
 from pathlib import Path
 
-from ..models import Segment
-from ..timing import timed_node
+from ..models import AnalysisContext, Segment
+from .base import Node, register
 
 log = logging.getLogger(__name__)
 
@@ -80,7 +80,6 @@ def _get_speech_verbs() -> set[str]:
     return _SPEECH_VERBS
 
 
-@timed_node("explicit_attribution", "programmatic")
 def attribute_explicit(segments: list[Segment]) -> list[Segment]:
     """Try to resolve each ``speaker="unknown"`` dialogue segment by
     scanning adjacent narration for speech-verb attribution patterns.
@@ -180,3 +179,15 @@ def _try_pronoun_match(
     if m:
         return m.group(1)
     return None
+
+
+@register
+class ExplicitAttributionNode(Node):
+    """Read the speaker off the prose where the text names one outright."""
+
+    name = "explicit_attribution"
+    requires = ("segments",)
+    assigns = ("segments.speaker",)
+
+    async def run(self, ctx: AnalysisContext) -> None:
+        ctx.segments = attribute_explicit(ctx.segments)

@@ -1,7 +1,10 @@
 """Data models for the hybrid text-analysis pipeline."""
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:
+    from .llm import LLMClient
 
 
 ALLOWED_EMOTIONS = frozenset([
@@ -29,6 +32,28 @@ class Segment:
     paragraph_index: int = 0
     char_offset_start: int = 0
     char_offset_end: int = 0
+
+
+@dataclass
+class AnalysisContext:
+    """The state one analysis run threads through every node.
+
+    Nodes take the context instead of a bespoke argument list. That is the
+    whole point: a node added in the middle reads what it needs and writes what
+    it produces without any other node's signature changing, so inserting one
+    is an edit to the pipeline's node list and nothing else.
+
+    ``meta`` is deliberately open. A node that wants to record something no
+    other node knows about puts it there rather than growing this class.
+    """
+
+    text: str
+    title: str = ""
+    llm: "LLMClient | None" = None
+    segments: list[Segment] = field(default_factory=list)
+    characters: list[dict] = field(default_factory=list)
+    validation: Optional[dict] = None
+    meta: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

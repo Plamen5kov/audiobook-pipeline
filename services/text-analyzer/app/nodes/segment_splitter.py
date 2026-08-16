@@ -13,8 +13,8 @@ Handles:
 from __future__ import annotations
 
 import logging
-from ..models import Segment
-from ..timing import timed_node
+from ..models import AnalysisContext, Segment
+from .base import Node, register
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +30,6 @@ _CLOSING_CONTEXT = set("abcdefghijklmnopqrstuvwxyz"
                        ".,!?;\u2026\u2019'")
 
 
-@timed_node("segment_splitter", "programmatic")
 def split_segments(text: str) -> list[Segment]:
     """Split *text* into an ordered list of Segment objects.
 
@@ -190,3 +189,15 @@ def _merge_consecutive_narration(segments: list[Segment], max_chars: int = 800) 
         seg.id = i
 
     return merged
+
+
+@register
+class SegmentSplitterNode(Node):
+    """Turn the chapter text into segments. Everything downstream needs these."""
+
+    name = "segment_splitter"
+    requires = ("text",)
+    assigns = ("segments", "segments.kind")
+
+    async def run(self, ctx: AnalysisContext) -> None:
+        ctx.segments = split_segments(ctx.text)
