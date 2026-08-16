@@ -228,3 +228,31 @@ def test_redo_reports_segments_that_had_no_clip():
 def test_redo_rejects_a_malformed_body():
     for bad in ({}, {"segments": []}, {"segments": "all"}, {"segments": [1, "two"]}):
         assert client.post("/api/jobs/ch1001/redo", json=bad).status_code == 400
+
+
+def test_deleting_one_run_leaves_the_others():
+    _seed("ch-del-a")
+    _seed("ch-del-b")
+    assert client.delete("/api/jobs/ch-del-a").status_code == 200
+    remaining = [j["job_id"] for j in client.get("/api/jobs").json()]
+    assert "ch-del-a" not in remaining
+    assert "ch-del-b" in remaining
+
+
+def test_deleting_a_run_that_is_not_there_is_a_404():
+    assert client.delete("/api/jobs/never-was").status_code == 404
+
+
+def test_clearing_everything_needs_confirmation():
+    _seed("ch-keep")
+    assert client.delete("/api/jobs").status_code == 400
+    assert "ch-keep" in [j["job_id"] for j in client.get("/api/jobs").json()]
+
+
+def test_clearing_everything_with_confirmation_empties_the_workspace():
+    _seed("ch-x")
+    _seed("ch-y")
+    r = client.delete("/api/jobs?confirm=all")
+    assert r.status_code == 200
+    assert r.json()["count"] >= 2
+    assert client.get("/api/jobs").json() == []

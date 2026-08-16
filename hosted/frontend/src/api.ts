@@ -296,6 +296,17 @@ export function segmentAudioUrl(jobId: string, segmentId: number): string {
   return `${BASE}/api/jobs/${encodeURIComponent(jobId)}/segments/${segmentId}/audio`;
 }
 
+export async function deleteJob(jobId: string): Promise<void> {
+  await requestVoid(`${BASE}/api/jobs/${encodeURIComponent(jobId)}`, {
+    method: 'DELETE',
+  });
+}
+
+/** Remove every run. The confirm flag is required by the API on purpose. */
+export async function deleteAllJobs(): Promise<{ count: number }> {
+  return request(`${BASE}/api/jobs?confirm=all`, { method: 'DELETE' });
+}
+
 export async function redoSegments(
   jobId: string,
   segments: number[],

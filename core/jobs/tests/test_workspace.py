@@ -197,3 +197,43 @@ def test_an_absolute_clip_path_is_checked_where_it_actually_is(job, tmp_path):
     clip.unlink()
     todo, reuse = plan([s], job, _voice_of, _engine_of)
     assert [t["id"] for t in todo] == [1] and reuse == []
+
+
+# ---- deleting runs --------------------------------------------------------
+
+
+def test_deleting_a_run_removes_only_its_directory(job, tmp_path):
+    outside = tmp_path / "seg0001.wav"
+    outside.write_bytes(b"RIFF")
+    s = seg(1)
+    job.record_segment(1, segment_fingerprint(s, _voice_of(s), _engine_of(s)), str(outside))
+    job.write_json("analysis", "segments.json", [s])
+    job.save()
+
+    ws = Workspace(job.root.parent)
+    assert ws.delete("ch1001") is True
+    assert not job.root.exists()
+    assert ws.jobs() == []
+    # The clip lives in the volume shared with assembly and is named by segment
+    # id alone, so other runs point at it too.
+    assert outside.exists(), "deleting a run must not take shared clips with it"
+
+
+def test_deleting_a_run_that_is_not_there_says_so(job):
+    ws = Workspace(job.root.parent)
+    assert ws.delete("never-existed") is False
+
+
+def test_deleting_leaves_other_runs_alone(job):
+    ws = Workspace(job.root.parent)
+    other = ws.job("ch1002", create=True)
+    other.record_stage("analysis", "done")
+    ws.delete("ch1001")
+    assert ws.jobs() == ["ch1002"]
+
+
+def test_an_unsafe_job_id_cannot_delete(job):
+    ws = Workspace(job.root.parent)
+    for bad in ("../..", "a/b"):
+        with pytest.raises(ValueError):
+            ws.delete(bad)

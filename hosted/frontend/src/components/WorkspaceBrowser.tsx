@@ -9,6 +9,8 @@ import {
   getJob,
   getStageArtifacts,
   listJobs,
+  deleteAllJobs,
+  deleteJob,
   listSegments,
   redoSegments,
   segmentAudioUrl,
@@ -45,10 +47,12 @@ function JobList({
   jobs,
   selected,
   onSelect,
+  onDelete,
 }: {
   jobs: JobSummary[];
   selected: string | null;
   onSelect: (id: string) => void;
+  onDelete: (id: string) => void;
 }) {
   if (jobs.length === 0) {
     return (
@@ -62,7 +66,7 @@ function JobList({
       {jobs.map((job) => {
         const done = STAGE_ORDER.filter((s) => job.stages[s] === "done").length;
         return (
-          <li key={job.job_id}>
+          <li key={job.job_id} className="ws-job-row">
             <button
               className={`ws-job${job.job_id === selected ? " ws-job-selected" : ""}`}
               onClick={() => onSelect(job.job_id)}
@@ -73,6 +77,13 @@ function JobList({
                 {job.segments_recorded > 0 &&
                   ` · ${job.segments_recorded} takes`}
               </span>
+            </button>
+            <button
+              className="ws-job-delete"
+              title="Delete this run"
+              onClick={() => onDelete(job.job_id)}
+            >
+              ×
             </button>
           </li>
         );
@@ -255,6 +266,43 @@ export function WorkspaceBrowser({
       .catch((e) => setError(formatError(e)));
   }, []);
 
+  const clearSelection = () => {
+    setSelected(null);
+    setJob(null);
+    setSegments([]);
+  };
+
+  const removeJob = async (id: string) => {
+    if (!window.confirm(`Delete run ${id}? The segment audio itself is kept.`))
+      return;
+    try {
+      await deleteJob(id);
+      if (selected === id) clearSelection();
+      setNotice(`Deleted ${id}.`);
+      refreshJobs();
+    } catch (e) {
+      setError(formatError(e));
+    }
+  };
+
+  const removeAllJobs = async () => {
+    if (
+      !window.confirm(
+        `Delete all ${jobs.length} run(s)? This clears the list only; the segment ` +
+          "audio in the shared volume is kept.",
+      )
+    )
+      return;
+    try {
+      const { count } = await deleteAllJobs();
+      clearSelection();
+      setNotice(`Deleted ${count} run(s).`);
+      refreshJobs();
+    } catch (e) {
+      setError(formatError(e));
+    }
+  };
+
   useEffect(() => {
     if (open) refreshJobs();
   }, [open, refreshJobs]);
@@ -331,6 +379,13 @@ export function WorkspaceBrowser({
           <h2>Workspace</h2>
           <div className="ws-header-actions">
             <button onClick={refreshJobs}>Refresh</button>
+            <button
+              onClick={removeAllJobs}
+              disabled={jobs.length === 0}
+              title="Remove every run from this list"
+            >
+              Clear all
+            </button>
             <button onClick={onClose}>Close</button>
           </div>
         </header>
@@ -340,7 +395,12 @@ export function WorkspaceBrowser({
         <div className="ws-body">
           <aside className="ws-sidebar">
             <h3>Runs</h3>
-            <JobList jobs={jobs} selected={selected} onSelect={setSelected} />
+            <JobList
+              jobs={jobs}
+              selected={selected}
+              onSelect={setSelected}
+              onDelete={removeJob}
+            />
           </aside>
 
           <section className="ws-main">

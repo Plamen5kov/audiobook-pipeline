@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -184,3 +185,22 @@ class Workspace:
         if not self.root.exists():
             return []
         return sorted(p.name for p in self.root.iterdir() if p.is_dir())
+
+    def delete(self, job_id: str) -> bool:
+        """Remove a run's directory. Returns False if it was not there.
+
+        Only the job's own directory goes. The synthesised clips live in the
+        volume shared with assembly, under names derived from the segment id
+        alone, so several runs point at the same files — deleting them here
+        would take another run's audio with it.
+        """
+        job_root = self.job(job_id).root
+        if not job_root.is_dir():
+            return False
+        if job_root.resolve().parent != self.root.resolve():
+            # A job directory is always one level under the workspace. Anything
+            # else means the id escaped its validation, and deleting recursively
+            # on the strength of that is not a risk worth taking.
+            raise ValueError(f"refusing to delete outside the workspace: {job_root}")
+        shutil.rmtree(job_root)
+        return True

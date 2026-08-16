@@ -311,3 +311,27 @@
 .ws-empty  { color: var(--text-dim); }
 .ws-error  { color: var(--error); }
 .ws-notice { color: var(--success); }
+
+.ws-job-row {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.ws-job-row .ws-job { flex: 1; min-width: 0; }
+
+.ws-job-delete {
+  padding: 0 8px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.ws-job-delete:hover {
+  color: var(--error);
+  border-color: var(--error);
+}

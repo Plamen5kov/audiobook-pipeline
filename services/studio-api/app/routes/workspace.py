@@ -187,6 +187,38 @@ async def get_segment_audio(job_id: str, segment_id: int):
     )
 
 
+@router.delete("")
+async def delete_all_jobs(confirm: str = Query("", description='must be "all"')):
+    """Remove every run. Requires ?confirm=all, because a mis-typed URL should
+    not be able to clear the workspace."""
+    if confirm != "all":
+        raise HTTPException(status_code=400,
+                            detail='Refusing to delete everything without ?confirm=all')
+    ws = workspace()
+    removed = [name for name in ws.jobs() if ws.delete(name)]
+    log.warning("deleted %d run(s) from the workspace", len(removed))
+    return {"deleted": removed, "count": len(removed)}
+
+
+@router.delete("/{job_id}")
+async def delete_job(job_id: str):
+    """Remove one run's directory.
+
+    The synthesised clips are not touched: they live in the volume shared with
+    assembly under names derived from the segment id alone, so several runs
+    point at the same files and deleting them would take another run's audio.
+    """
+    ws = workspace()
+    try:
+        existed = ws.delete(job_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid job id")
+    if not existed:
+        raise HTTPException(status_code=404, detail=f"No such job: {job_id}")
+    log.info("deleted run %s", job_id)
+    return {"deleted": job_id}
+
+
 @router.post("/{job_id}/redo")
 async def redo_segments(job_id: str, body: dict):
     """Mark lines to render again on the next synthesis run.
