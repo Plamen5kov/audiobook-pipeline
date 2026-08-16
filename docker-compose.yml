@@ -1,3 +1,39 @@
+# The engine serialises generation behind a lock because the model is not
+# thread-safe, so throughput comes from running several copies rather than from
+# raising concurrency against one. Replicas share the model cache volume, so
+# only the first download pays for it.
+x-qwen3-tts: &qwen3-tts
+  build: ./services/qwen3-tts
+  environment:
+    # The Base checkpoint is the only one that clones from reference audio.
+    # CustomVoice offers nine preset speakers and cannot clone; VoiceDesign
+    # takes natural-language style instructions. Switching back to
+    # Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice restores the preset behaviour.
+    - MODEL_ID=Qwen/Qwen3-TTS-12Hz-1.7B-Base
+  volumes:
+    - ./data/intermediate:/data/intermediate
+    - ./voice-cast.yaml:/voice-cast.yaml:ro
+    - ./voicebank:/voicebank:ro
+    - qwen3-models:/root/.cache/huggingface
+  healthcheck:
+    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8007/health')"]
+    interval: 30s
+    timeout: 5s
+    retries: 3
+    start_period: 120s
+  ipc: host
+  ulimits:
+    memlock: -1
+    stack: 67108864
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+  restart: unless-stopped
+
 services:
   ollama:
     image: ollama/ollama:latest
@@ -78,7 +114,7 @@ services:
     volumes:
       - ./voice-cast.yaml:/voice-cast.yaml:ro
     environment:
-      - TTS_BACKENDS={"xtts-v2":"http://xtts-v2:8003","qwen3-tts":"http://qwen3-tts:8007"}
+      - TTS_BACKENDS={"xtts-v2":"http://xtts-v2:8003","qwen3-tts":["http://qwen3-tts:8007","http://qwen3-tts-2:8007","http://qwen3-tts-3:8007"],"qwen3-preset":"http://qwen3-preset:8007"}
       - DEFAULT_ENGINE=xtts-v2
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8010/health')"]
@@ -89,31 +125,24 @@ services:
     restart: unless-stopped
 
   qwen3-tts:
-    build: ./services/qwen3-tts
+    <<: *qwen3-tts
     ports:
       - "8007:8007"
-    volumes:
-      - ./data/intermediate:/data/intermediate
-      - ./voice-cast.yaml:/voice-cast.yaml:ro
-      - qwen3-models:/root/.cache/huggingface
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8007/health')"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 120s
-    ipc: host
-    ulimits:
-      memlock: -1
-      stack: 67108864
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    restart: unless-stopped
+
+  qwen3-tts-2:
+    <<: *qwen3-tts
+
+  qwen3-tts-3:
+    <<: *qwen3-tts
+
+  # Same engine, different checkpoint. CustomVoice cannot clone but ships nine
+  # preset speakers, and Base clones but has none, so a character who should
+  # sound like nobody in the corpus needs this one. Only one checkpoint fits in
+  # a process, hence a separate service rather than a flag.
+  qwen3-preset:
+    <<: *qwen3-tts
+    environment:
+      - MODEL_ID=Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice
 
   audio-assembly:
     build: ./services/audio-assembly
@@ -128,6 +157,36 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    restart: unless-stopped
+
+  qa-verifier:
+    build: ./services/qa-verifier
+    ports:
+      - "8006:8006"
+    volumes:
+      - ./data/intermediate:/data/intermediate:ro
+      - ./output:/output:ro
+      - qa-models:/root/.cache/huggingface
+    environment:
+      - WHISPER_MODEL=openai/whisper-small.en
+      - QA_THRESHOLD=0.85
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8006/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
+    ipc: host
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     restart: unless-stopped
 
   file-server:
@@ -150,3 +209,4 @@ volumes:
   root_ollama:
   xtts-models:
   qwen3-models:
+  qa-models:

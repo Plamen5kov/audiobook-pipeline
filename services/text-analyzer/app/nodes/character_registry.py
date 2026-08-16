@@ -45,17 +45,37 @@ def build_character_registry(segments: list[Segment]) -> list[dict]:
                 if _FEMALE_PATTERN.search(text):
                     char_info[name]["gender_votes"]["female"] += 1
 
-    result: list[dict] = [{"name": "narrator", "description": "the narrative voice"}]
+    result: list[dict] = [{
+        "name": "narrator",
+        "gender": "neutral",
+        "segments": sum(1 for s in segments if s.speaker == "narrator"),
+        "description": "the narrative voice",
+    }]
 
     for name, info in char_info.items():
         votes = info["gender_votes"]
-        parts = []
+        # Gender is exposed as a field, not just prose: casting a male character
+        # with a female voice is the most audible possible error, so the
+        # information has to survive in a form the voice assignment can use.
         if votes["male"] > votes["female"]:
-            parts.append("male")
+            gender = "male"
         elif votes["female"] > votes["male"]:
-            parts.append("female")
+            gender = "female"
+        else:
+            gender = "unknown"
+
+        parts = []
+        if gender != "unknown":
+            parts.append(gender)
         parts.append(f"{info['count']} dialogue segment(s)")
-        result.append({"name": name, "description": ", ".join(parts)})
+        result.append({
+            "name": name,
+            "gender": gender,
+            "segments": info["count"],
+            "male_votes": votes["male"],
+            "female_votes": votes["female"],
+            "description": ", ".join(parts),
+        })
 
     log.info("Character registry: %s",
              [c["name"] for c in result])

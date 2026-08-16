@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import subprocess
@@ -26,9 +27,13 @@ MODEL_ID = os.getenv("MODEL_ID", "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice")
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+VOICEBANK_PATH = os.getenv("VOICEBANK_PATH", "/voicebank/voicebank.json")
+
 tts_model: Qwen3TTSModel | None = None
 _infer_lock = threading.Lock()
 _voice_profiles: dict = {}
+_voicebank: dict = {}
+_clone_prompts: dict = {}
 
 # Fallback Qwen speaker when voice-cast.yaml has no qwen_speaker for a character.
 QWEN_DEFAULT_SPEAKER = "Ryan"
@@ -73,6 +78,83 @@ def _load_voice_cast() -> None:
     log.info("voice cast loaded: profiles=%d path=%s", len(_voice_profiles), VOICE_CAST_PATH)
 
 
+def _load_voicebank() -> None:
+    """Load the cloning references exported from the aligned corpus.
+
+    Each entry pairs a clip with the exact words spoken in it, which is what
+    lets the model clone in in-context mode rather than from a speaker
+    embedding alone.
+    """
+    global _voicebank
+    manifest = Path(VOICEBANK_PATH)
+    if not manifest.is_file():
+        log.info("no voice bank at path=%s -- preset voices only", VOICEBANK_PATH)
+        _voicebank = {}
+        return
+    data = json.loads(manifest.read_text())
+    voices = data.get("voices", {})
+    root = manifest.parent
+    _voicebank = {}
+    for name, clips in voices.items():
+        # A clip may carry an emotion label. Grouping by it lets a line be
+        # cloned from a reference the narrator delivered that way, which is the
+        # only handle on delivery available: this checkpoint clones but takes
+        # no emotion instruction, so tone has to come from the reference.
+        by_emotion: dict[str, dict] = {}
+        for clip in clips:
+            path = root / clip["file"]
+            if not path.is_file():
+                continue
+            emotion = (clip.get("emotion") or "neutral").lower()
+            best = by_emotion.get(emotion)
+            if best is None or (clip.get("align_score") or 0) > best["score"]:
+                by_emotion[emotion] = {"audio": str(path),
+                                       "text": clip["text"],
+                                       "score": clip.get("align_score") or 0}
+        if by_emotion:
+            # Neutral is the fallback for any emotion with no clip of its own,
+            # so a rare label degrades to a flat reading rather than failing.
+            by_emotion.setdefault("neutral", next(iter(by_emotion.values())))
+            _voicebank[name] = by_emotion
+    log.info("voice bank loaded: %d voices from %s (%s)", len(_voicebank),
+             manifest,
+             ", ".join(f"{n}:{len(e)}" for n, e in list(_voicebank.items())[:6]))
+
+
+def _clone_prompt(speaker: str, emotion: str = "neutral"):
+    """Build (once) and return the clone prompt for *speaker*, or None.
+
+    Cached per speaker *and* emotion: a chapter has thousands of segments but
+    only a handful of voices, and building a prompt runs the model. Callers
+    must hold the inference lock, since the model is not thread-safe.
+    """
+    key = f"{speaker}::{emotion}"
+    if key in _clone_prompts:
+        return _clone_prompts[key]
+    voice = _voicebank.get(speaker)
+    if not voice:
+        _clone_prompts[key] = None
+        return None
+    entry = voice.get(emotion) or voice.get("neutral")
+    if not entry:
+        _clone_prompts[key] = None
+        return None
+    try:
+        prompt = tts_model.create_voice_clone_prompt(
+            ref_audio=entry["audio"],
+            ref_text=entry["text"],
+            x_vector_only_mode=False,
+        )
+        log.info("clone prompt built: speaker=%s emotion=%s ref=%s",
+                 speaker, emotion, entry["audio"])
+    except Exception as exc:
+        log.error("clone prompt failed for speaker=%s emotion=%s: %s",
+                  speaker, emotion, exc)
+        prompt = None
+    _clone_prompts[key] = prompt
+    return prompt
+
+
 def _resolve_qwen_speaker(speaker: str) -> str:
     """Look up the qwen_speaker for *speaker* in the voice cast, falling back to the default."""
     profile = _voice_profiles.get(speaker) or _voice_profiles.get("default") or {}
@@ -113,6 +195,7 @@ async def lifespan(app: FastAPI):
         dtype=torch.bfloat16,
     )
     log.info("model loaded: model_id=%s", MODEL_ID)
+    _load_voicebank()
     yield
 
 
@@ -133,7 +216,8 @@ class SynthesizeRequest(BaseModel):
     segment_id: int = 0
     speaker: str = "default"
     engine: str = "qwen3-tts"         # accepted for contract parity; not used here
-    reference_audio_path: str = ""    # accepted but ignored -- Qwen has no voice cloning
+    reference_audio_path: str = ""    # overrides the voice bank for this request
+    reference_text: str = ""          # words spoken in the reference, for in-context cloning
     qwen_speaker: str = ""            # override: if set, skip voice-cast.yaml lookup
     emotion: str = "neutral"
     intensity: float = 0.5
@@ -153,15 +237,31 @@ def _resolve_speaker_and_instruct(request: SynthesizeRequest) -> tuple[str, str 
     return qwen_speaker, instruct
 
 
-def _generate_audio(text: str, qwen_speaker: str, instruct: str | None, output_path: str, speed: float = 1.0) -> None:
-    """Run Qwen3-TTS inference and write the result to *output_path*."""
-    wavs, sr = tts_model.generate_custom_voice(
-        text=text,
-        language="English",
-        speaker=qwen_speaker,
-        instruct=instruct,
-    )
-    # generate_custom_voice returns a list of arrays; index 0 for single-text input.
+def _generate_audio(text: str, qwen_speaker: str, instruct: str | None, output_path: str,
+                    speed: float = 1.0, clone_prompt=None) -> None:
+    """Run Qwen3-TTS inference and write the result to *output_path*.
+
+    With a clone prompt the preset speaker and the emotion instruct are both
+    unused: the reference clip defines the voice, and an instruct string cannot
+    be passed to the clone path. That is a deliberate trade, since varying the
+    instruct is what makes a correctly cast character stop sounding like
+    himself across a chapter.
+    """
+    if clone_prompt is not None:
+        wavs, sr = tts_model.generate_voice_clone(
+            text=text,
+            language="English",
+            voice_clone_prompt=clone_prompt,
+            non_streaming_mode=True,
+        )
+    else:
+        wavs, sr = tts_model.generate_custom_voice(
+            text=text,
+            language="English",
+            speaker=qwen_speaker,
+            instruct=instruct,
+        )
+    # The generate_* calls return a list of arrays; index 0 for single-text input.
     audio = wavs[0]
     sf.write(output_path, audio, sr)
 
@@ -230,7 +330,24 @@ def synthesize(request: SynthesizeRequest):
     start = time.monotonic()
     with _infer_lock:
         try:
-            _generate_audio(request.text, qwen_speaker, instruct, output_path, request.speed)
+            if request.reference_audio_path:
+                # Cached on the reference itself, so comparing several
+                # candidate voices does not rebuild the same prompt per line.
+                key = f"ref::{request.reference_audio_path}"
+                if key not in _clone_prompts:
+                    _clone_prompts[key] = tts_model.create_voice_clone_prompt(
+                        ref_audio=request.reference_audio_path,
+                        ref_text=request.reference_text or None,
+                        x_vector_only_mode=not request.reference_text,
+                    )
+                    log.info("clone prompt built from request ref=%s",
+                             request.reference_audio_path)
+                clone_prompt = _clone_prompts[key]
+            else:
+                clone_prompt = _clone_prompt(request.speaker,
+                                             (request.emotion or "neutral").lower())
+            _generate_audio(request.text, qwen_speaker, instruct, output_path,
+                            request.speed, clone_prompt)
         except Exception as exc:
             log.error("synthesis failed: segment_id=%d error=%s", request.segment_id, exc)
             raise HTTPException(status_code=500, detail=f"TTS generation failed: {exc}")

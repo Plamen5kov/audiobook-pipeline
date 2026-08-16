@@ -38,7 +38,37 @@ def apply_turn_taking(segments: list[Segment]) -> list[Segment]:
     # Second pass: alternate speakers in conversation blocks.
     _alternate_speakers(segments)
 
+    # Final pass: a chapter with a single identified character.
+    _resolve_sole_character(segments)
+
     return segments
+
+
+def _resolve_sole_character(segments: list[Segment]) -> None:
+    """Assign leftover unknown dialogue when the chapter has exactly one
+    identified character.
+
+    Narration-heavy prose resets the conversation block often, so a chapter
+    that is really one person speaking can still finish with unattributed
+    lines. Those would otherwise be cast to a separate voice, making the
+    protagonist sound like two people.
+    """
+    named = {
+        seg.speaker for seg in segments
+        if seg.kind == "dialogue" and seg.speaker not in ("unknown", "narrator")
+    }
+    if len(named) != 1:
+        return
+
+    sole = named.pop()
+    resolved = 0
+    for seg in segments:
+        if seg.kind == "dialogue" and seg.speaker == "unknown":
+            seg.speaker = sole
+            seg.attribution_source = "sole_character"
+            resolved += 1
+    if resolved:
+        log.info("Sole-character resolution: %d segment(s) → %s", resolved, sole)
 
 
 def _resolve_pronouns(segments: list[Segment]) -> None:
@@ -107,3 +137,12 @@ def _alternate_speakers(segments: list[Segment]) -> None:
             seg.attribution_source = "turn_taking"
             conv_speakers.append(assigned)
             log.debug("Turn-taking: segment %d → %s", seg.id, assigned)
+        elif len(conv_speakers) == 1:
+            # Only one speaker is established in this block, so there is nobody
+            # to alternate with: a monologue, or a one-sided exchange. Leaving
+            # it unknown gives the line a different voice from the character
+            # who is plainly speaking, which is worse than this assumption.
+            assigned = conv_speakers[0]
+            seg.speaker = assigned
+            seg.attribution_source = "turn_taking"
+            log.debug("Turn-taking (sole speaker): segment %d → %s", seg.id, assigned)

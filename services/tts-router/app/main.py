@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -15,13 +16,26 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# Backend map: engine name -> base URL. Loaded from TTS_BACKENDS env var (JSON string).
-# Example: '{"xtts-v2":"http://xtts-v2:8003","qwen3-tts":"http://qwen3-tts:8007"}'
-BACKENDS: dict[str, str] = json.loads(os.getenv("TTS_BACKENDS", "{}"))
+# Backend map: engine name -> base URL, or a list of URLs for replicas.
+# Example: '{"xtts-v2":"http://xtts-v2:8003",
+#            "qwen3-tts":["http://qwen3-tts:8007","http://qwen3-tts-2:8007"]}'
+def _load_backends() -> dict[str, list[str]]:
+    raw = json.loads(os.getenv("TTS_BACKENDS", "{}"))
+    return {engine: ([urls] if isinstance(urls, str) else list(urls))
+            for engine, urls in raw.items()}
+
+
+BACKENDS: dict[str, list[str]] = _load_backends()
 DEFAULT_ENGINE: str = os.getenv("DEFAULT_ENGINE", "xtts-v2")
 
 # Reuse a single async HTTP client across requests to benefit from connection pooling.
 _http_client: httpx.AsyncClient | None = None
+
+# One queue of free replicas per engine. Each backend serialises generation
+# internally, so handing a request a specific idle replica is what actually
+# parallelises the work — raising client concurrency against one replica only
+# lengthens its queue.
+_pools: dict[str, asyncio.Queue] = {}
 
 
 class SynthesizeRequest(BaseModel):
@@ -47,8 +61,12 @@ async def lifespan(app: FastAPI):
         log.warning("TTS_BACKENDS env var is empty -- no backends configured")
     else:
         log.info("TTS backends loaded:")
-        for engine, url in BACKENDS.items():
-            log.info("  %s -> %s", engine, url)
+        for engine, urls in BACKENDS.items():
+            queue: asyncio.Queue = asyncio.Queue()
+            for url in urls:
+                queue.put_nowait(url)
+            _pools[engine] = queue
+            log.info("  %s -> %d replica(s): %s", engine, len(urls), ", ".join(urls))
     log.info("default_engine=%s", DEFAULT_ENGINE)
 
     yield
@@ -64,21 +82,17 @@ app = FastAPI(
 )
 
 
-def _resolve_backend(engine: str) -> tuple[str, str]:
-    """Return (resolved_engine, backend_base_url) or raise HTTPException."""
-    backend_base = BACKENDS.get(engine)
-    if backend_base:
-        return engine, backend_base
-
-    # Fall back to default engine if the requested one is not registered.
-    fallback_base = BACKENDS.get(DEFAULT_ENGINE)
-    if not fallback_base:
+def _resolve_engine(engine: str) -> str:
+    """Return the engine to use, falling back to the default if unregistered."""
+    if engine in _pools:
+        return engine
+    if DEFAULT_ENGINE not in _pools:
         raise HTTPException(
             status_code=400,
             detail=f"Unknown engine {engine!r} and no default backend configured",
         )
     log.warning("engine=%r not found, falling back to engine=%r", engine, DEFAULT_ENGINE)
-    return DEFAULT_ENGINE, fallback_base
+    return DEFAULT_ENGINE
 
 
 @app.post("/synthesize")
@@ -94,12 +108,19 @@ async def synthesize(request: Request):
     segment_id = body_json.get("segment_id", "?")
     speaker = body_json.get("speaker", "?")
 
-    resolved_engine, backend_base = _resolve_backend(engine)
+    resolved_engine = _resolve_engine(engine)
+    pool = _pools[resolved_engine]
+
+    # Wait for a free replica rather than piling onto a busy one. With a single
+    # replica this is exactly the old behaviour.
+    queued_at = time.monotonic()
+    backend_base = await pool.get()
+    waited = time.monotonic() - queued_at
     backend_url = f"{backend_base}/synthesize"
 
     log.info(
-        "request received: segment_id=%s speaker=%s engine=%s backend=%s",
-        segment_id, speaker, resolved_engine, backend_url,
+        "request received: segment_id=%s speaker=%s engine=%s backend=%s waited=%.1fs",
+        segment_id, speaker, resolved_engine, backend_url, waited,
     )
 
     # Forward the original body as-is so no fields are dropped.
@@ -120,6 +141,10 @@ async def synthesize(request: Request):
         raise HTTPException(
             status_code=504, detail=f"TTS backend timeout: {backend_url}"
         )
+    finally:
+        # The replica must go back in the pool even when the call failed, or a
+        # transient backend error would permanently shrink capacity.
+        pool.put_nowait(backend_base)
     duration_s = time.monotonic() - start
 
     log.info(
@@ -141,4 +166,6 @@ async def health():
         "service": "tts-router",
         "default_engine": DEFAULT_ENGINE,
         "backends": BACKENDS,
+        "replicas": {e: len(u) for e, u in BACKENDS.items()},
+        "idle": {e: q.qsize() for e, q in _pools.items()},
     }

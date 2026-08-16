@@ -30,8 +30,8 @@ def test_name_verb_pattern():
         ("dialogue", "unknown", "Be quiet!"),
     ])
     result = attribute_explicit(segs)
-    # The Name+Verb regex captures multi-word runs; assert the name is extracted
-    assert "Marcus" in result[1].speaker or result[1].attribution_source == "explicit"
+    assert result[1].speaker == "Marcus"
+    assert result[1].attribution_source == "explicit"
 
 
 def test_no_adjacent_narration():
@@ -46,14 +46,66 @@ def test_no_adjacent_narration():
 
 
 def test_pronoun_attribution():
-    """Pronoun + verb should set attribution_source when no named match found."""
+    """Pronoun + verb must take the pronoun path, never become a speaker."""
     segs = _make_segments([
         ("dialogue", "unknown", "Let me explain."),
         ("narration", "narrator", "he said."),
     ])
     result = attribute_explicit(segs)
-    # Should be attributed via pronoun since no proper name is adjacent
-    assert result[0].attribution_source in ("pronoun_male", "explicit")
+    assert result[0].attribution_source == "pronoun_male"
+    assert result[0].speaker == "unknown"
+
+
+def test_lowercase_words_never_become_speakers():
+    """Regression: re.IGNORECASE let [A-Z] match lowercase, so narration like
+    'he said to his companion' produced the speaker 'to his companion'."""
+    cases = [
+        "he said to his companion.",
+        "she asked against her better judgement.",
+        "replied he, and turned away.",
+        "said she, with feeling.",
+    ]
+    for narration in cases:
+        segs = _make_segments([
+            ("dialogue", "unknown", "Some line of dialogue."),
+            ("narration", "narrator", narration),
+        ])
+        result = attribute_explicit(segs)
+        assert result[0].speaker == "unknown", (
+            f"{narration!r} produced speaker {result[0].speaker!r}"
+        )
+
+
+def test_sentence_initial_common_words_never_become_speakers():
+    """Regression: capitalisation carries no information at the start of a
+    sentence, so 'He said.' and 'Neither replied.' produced the characters
+    'He' and 'Neither' in a real chapter run."""
+    for narration in [
+        "He said, turning away.",
+        "Neither replied for a long moment.",
+        "She asked, quietly.",
+        "Instead he muttered something.",
+        "Eventually someone answered.",
+    ]:
+        segs = _make_segments([
+            ("dialogue", "unknown", "A line of dialogue."),
+            ("narration", "narrator", narration),
+        ])
+        result = attribute_explicit(segs)
+        assert result[0].speaker == "unknown", (
+            f"{narration!r} produced speaker {result[0].speaker!r}"
+        )
+
+
+def test_real_name_still_extracted_around_pronouns():
+    """A genuine name must still win even when pronouns are nearby."""
+    segs = _make_segments([
+        ("dialogue", "unknown", "You are mistaken."),
+        ("narration", "narrator", "said Elizabeth, before he could answer her."),
+    ])
+    result = attribute_explicit(segs)
+    assert result[0].speaker == "Elizabeth"
+    assert result[0].attribution_source == "explicit"
 
 
 def test_already_attributed():

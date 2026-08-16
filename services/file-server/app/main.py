@@ -137,6 +137,16 @@ async def delete_voice(engine: str, filename: str):
     return {"ok": True, "deleted": f"{engine}/{filename}"}
 
 
+_AUDIO_MEDIA_TYPES = {
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".m4a": "audio/mp4",
+    ".m4b": "audio/mp4",
+    ".ogg": "audio/ogg",
+    ".flac": "audio/flac",
+}
+
+
 @app.get("/audio/{filename}")
 async def get_audio(filename: str, request: Request):
     """Serve a generated audiobook file with range-request support for browser seek/duration."""
@@ -147,6 +157,9 @@ async def get_audio(filename: str, request: Request):
 
     file_size = os.path.getsize(path)
     range_header = request.headers.get("Range")
+    media_type = _AUDIO_MEDIA_TYPES.get(
+        os.path.splitext(filename)[1].lower(), "application/octet-stream"
+    )
 
     async def stream(start: int, length: int):
         async with aiofiles.open(path, "rb") as f:
@@ -169,7 +182,7 @@ async def get_audio(filename: str, request: Request):
             return StreamingResponse(
                 stream(start, length),
                 status_code=206,
-                media_type="audio/wav",
+                media_type=media_type,
                 headers={
                     "Content-Range": f"bytes {start}-{end}/{file_size}",
                     "Accept-Ranges": "bytes",
@@ -179,7 +192,7 @@ async def get_audio(filename: str, request: Request):
 
     return StreamingResponse(
         stream(0, file_size),
-        media_type="audio/wav",
+        media_type=media_type,
         headers={
             "Accept-Ranges": "bytes",
             "Content-Length": str(file_size),
@@ -199,16 +212,26 @@ async def write_status(job_id: str, request: Request):
     return {"ok": True}
 
 
+async def _read_status_file(job_id: str) -> dict | None:
+    """Read a job's status JSON, or None if it is absent or unreadable."""
+    path = os.path.join(OUTPUT_DIR, f"status_{_safe_filename(job_id)}.json")
+    if not os.path.exists(path):
+        return None
+    try:
+        async with aiofiles.open(path, "r") as f:
+            return json.loads(await f.read())
+    except (OSError, json.JSONDecodeError) as exc:
+        log.warning("could not read status for %s: %s", job_id, exc)
+        return None
+
+
 @app.get("/status/{job_id}")
 async def read_status(job_id: str):
     """Read current job status (polled by the frontend)."""
-    job_id = _safe_filename(job_id)
-    path = os.path.join(OUTPUT_DIR, f"status_{job_id}.json")
-    if not os.path.exists(path):
+    data = await _read_status_file(job_id)
+    if data is None:
         raise HTTPException(status_code=404, detail="Job not found")
-    async with aiofiles.open(path, "r") as f:
-        content = await f.read()
-    return json.loads(content)
+    return data
 
 
 _active_job: dict[str, str] = {}  # {"job_id": ..., "phase": ...} or empty
@@ -254,9 +277,16 @@ async def api_synthesize(request: Request):
     segments = body.get("segments", [])
     voice_mapping = body.get("voice_mapping", {})
     engine_mapping = body.get("engine_mapping", {})
+    characters = body.get("characters", [])
 
     if not job_id:
         raise HTTPException(status_code=400, detail="job_id is required")
+
+    # Fall back to the character list recorded during analysis, so a caller that
+    # does not echo it back still gets gender-correct casting.
+    if not characters:
+        prior = await _read_status_file(job_id)
+        characters = (prior or {}).get("characters", [])
 
     # Allow synthesize for the same job that just finished analyzing.
     if _active_job and _active_job.get("job_id") != job_id:
@@ -268,7 +298,8 @@ async def api_synthesize(request: Request):
     _active_job.update({"job_id": job_id, "phase": "synthesizing"})
     client: httpx.AsyncClient = request.app.state.http_client
     asyncio.create_task(_run_and_clear(
-        run_synthesize(client, job_id, segments, voice_mapping, engine_mapping), job_id,
+        run_synthesize(client, job_id, segments, voice_mapping, engine_mapping, characters),
+        job_id,
     ))
     return JSONResponse({"status": "synthesizing", "job_id": job_id})
 

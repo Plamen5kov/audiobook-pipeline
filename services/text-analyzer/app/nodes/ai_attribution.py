@@ -26,8 +26,34 @@ _USER_TEMPLATE = (_PROMPTS_DIR / "ai_attribution_user.txt").read_text().strip()
 
 # Maximum unknown segments per LLM batch.
 _BATCH_SIZE = 20
-# How many segments of context to include around each unknown.
-_CONTEXT_WINDOW = 3
+# How many segments of context to include around each unknown. Wide enough to
+# reach the narration that sets a scene, since a long alternating exchange can
+# run for many segments without naming anyone.
+_CONTEXT_WINDOW = 6
+# How far to look for characters who are actually present. Offering the whole
+# chapter's cast invites the model to place people in scenes they are not in.
+_SCENE_WINDOW = 12
+
+
+def _scene_candidates(segments: list[Segment], indices: list[int],
+                      known: list[str]) -> list[str]:
+    """Characters plausibly present near *indices*.
+
+    A name counts as present if it is spoken of in nearby text or already
+    attributed to a nearby line. Restricting the list this way is what stops a
+    character from another scene being offered as an answer.
+    """
+    lo = max(0, min(indices) - _SCENE_WINDOW)
+    hi = min(len(segments), max(indices) + _SCENE_WINDOW + 1)
+    window = segments[lo:hi]
+    blob = " ".join(s.original_text for s in window)
+
+    present = {s.speaker for s in window
+               if s.speaker not in ("unknown", "narrator")}
+    for name in known:
+        if re.search(rf"\b{re.escape(name)}\b", blob):
+            present.add(name)
+    return sorted(present)
 
 
 @timed_node("ai_attribution", "ai")
@@ -86,8 +112,11 @@ async def resolve_ambiguous_speakers(
                 "context": context,
             })
 
+        candidates = _scene_candidates(segments, batch_indices, character_names)
+        log.info("AI attribution: batch of %d, scene candidates %s",
+                 len(batch_indices), candidates)
         prompt = _USER_TEMPLATE.format(
-            character_names=json.dumps(character_names),
+            character_names=json.dumps(candidates),
             queries=json.dumps(queries, indent=2),
         )
 
@@ -99,16 +128,27 @@ async def resolve_ambiguous_speakers(
 
         # Apply attributions from this batch.
         attr_map = {a["segment_id"]: a["speaker"] for a in attributions}
+        allowed = set(candidates)
         for idx in batch_indices:
             seg = segments[idx]
-            speaker = attr_map.get(seg.id)
-            if speaker:
-                seg.speaker = speaker
-                seg.attribution_source = "ai"
-                log.debug("AI attribution: segment %d → %s", seg.id, speaker)
+            speaker = (attr_map.get(seg.id) or "").strip()
+            if not speaker or speaker.lower() == "unknown":
+                continue
+            # A name the model invented, or borrowed from another scene, is
+            # rejected rather than trusted. Leaving the segment unknown keeps
+            # the problem visible instead of burying it in a wrong voice.
+            if speaker not in allowed:
+                log.warning("AI attribution: rejected %r for segment %d "
+                            "(not present in scene)", speaker, seg.id)
+                continue
+            seg.speaker = speaker
+            seg.attribution_source = "ai"
+            log.debug("AI attribution: segment %d -> %s", seg.id, speaker)
 
-    # Fallback: any still-unknown segments get assigned to the last known speaker.
-    _fallback_last_speaker(segments)
+    remaining = sum(1 for s in segments
+                    if s.kind == "dialogue" and s.speaker == "unknown")
+    log.info("AI attribution: %d segment(s) still unknown after resolution",
+             remaining)
 
     return segments
 

@@ -33,6 +33,11 @@ class AssembleRequest(BaseModel):
     crossfade_ms: int = 50
     normalize: bool = True
     target_dbfs: float = -20.0
+    # Audiobook distribution format. 64k mono is the usual spoken-word bitrate
+    # and turns a 25-minute chapter from ~250MB of WAV into ~12MB.
+    output_format: str = "mp3"
+    mp3_bitrate: str = "64k"
+    mono: bool = True
 
 
 def _find_latest_segment_file(original_path: str, segment_id: int) -> str | None:
@@ -89,9 +94,24 @@ def assemble(request: AssembleRequest):
     elif request.normalize:
         log.warning("Skipping normalization — audio is silent (dBFS=%.1f)", combined.dBFS)
 
-    output_filename = request.output_filename or f"chapter_{uuid.uuid4().hex[:8]}.wav"
+    fmt = (request.output_format or "mp3").lower()
+
+    if request.mono and combined.channels > 1:
+        combined = combined.set_channels(1)
+
+    output_filename = request.output_filename or f"chapter_{uuid.uuid4().hex[:8]}.{fmt}"
+    # Honour the requested format even if the caller passed a stale extension.
+    stem, _, ext = output_filename.rpartition(".")
+    if stem and ext.lower() != fmt:
+        output_filename = f"{stem}.{fmt}"
+
     output_path = os.path.join(OUTPUT_DIR, output_filename)
-    combined.export(output_path, format="wav")
+
+    export_kwargs: dict = {"format": fmt}
+    if fmt == "mp3":
+        export_kwargs["bitrate"] = request.mp3_bitrate
+        export_kwargs["parameters"] = ["-q:a", "2"]
+    combined.export(output_path, **export_kwargs)
 
     duration_s = len(combined) / 1000
     log.info("Exported: %s (%.1fs, %d clips)", output_path, duration_s, len(clips_sorted))
