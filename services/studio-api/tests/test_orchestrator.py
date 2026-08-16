@@ -273,3 +273,52 @@ async def test_cast_and_qa_are_kept_as_artifacts():
     assert job.read_json("cast", "cast.json")["voice_mapping"]["narrator"] == "Ryan"
     assert job.stage_status("assembly") == "done"
     assert job.manifest()["stages"]["synthesis"]["rendered"] == 2
+
+
+@pytest.mark.asyncio
+async def test_a_preset_engine_gets_a_speaker_name_not_a_reference_path():
+    """The preset checkpoint cannot clone. Sending it a reference path instead
+    of the chosen voice failed every request with a 500."""
+    sent = []
+
+    class Capturing(CountingTransport):
+        async def handle_async_request(self, request):
+            if "/synthesize" in str(request.url):
+                sent.append(json.loads(request.content))
+            return await super().handle_async_request(request)
+
+    transport = Capturing({
+        "/assemble": {"json": {"filename": "c.mp3", "duration_ms": 1}},
+    })
+    client = httpx.AsyncClient(transport=transport)
+    await run_synthesize(client, "job-preset", _segments(),
+                         {"narrator": "Vivian"}, {"narrator": "qwen3-preset"})
+    await client.aclose()
+
+    assert sent, "nothing was synthesised"
+    for req in sent:
+        assert req["qwen_speaker"] == "Vivian"
+        assert req["reference_audio_path"] == ""
+
+
+@pytest.mark.asyncio
+async def test_xtts_still_gets_a_reference_path():
+    sent = []
+
+    class Capturing(CountingTransport):
+        async def handle_async_request(self, request):
+            if "/synthesize" in str(request.url):
+                sent.append(json.loads(request.content))
+            return await super().handle_async_request(request)
+
+    transport = Capturing({
+        "/assemble": {"json": {"filename": "c.mp3", "duration_ms": 1}},
+    })
+    client = httpx.AsyncClient(transport=transport)
+    await run_synthesize(client, "job-xtts", _segments(),
+                         {"narrator": "elena.wav"}, {"narrator": "xtts-v2"})
+    await client.aclose()
+
+    for req in sent:
+        assert req["reference_audio_path"] == "/voices/xtts/elena.wav"
+        assert req["qwen_speaker"] == ""

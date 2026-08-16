@@ -229,12 +229,18 @@ async def run_synthesize(
             speaker = seg.get("speaker", "default")
             engine = _engine_of(seg)
             voice_value = _voice_of(seg)
+            # What a voice value means depends on the engine, and the test is
+            # which family the engine belongs to rather than which single
+            # engine it is not. Written as `engine != "qwen3-tts"` it worked
+            # only while exactly two engines existed: adding the CustomVoice
+            # deployment made every preset request arrive as an XTTS reference
+            # path, and CustomVoice cannot clone, so synthesis failed outright.
+            is_qwen = engine.startswith("qwen3")
             reference_audio_path = (
-                f"/voices/xtts/{voice_value or 'generic_neutral.wav'}"
-                if engine != "qwen3-tts"
-                else ""
+                "" if is_qwen
+                else f"/voices/xtts/{voice_value or 'generic_neutral.wav'}"
             )
-            qwen_speaker = voice_value if engine == "qwen3-tts" else ""
+            qwen_speaker = voice_value if is_qwen else ""
 
             tts_requests.append({
                 "segment_id": seg["id"],

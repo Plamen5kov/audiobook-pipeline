@@ -335,13 +335,23 @@ def synthesize(request: SynthesizeRequest):
                 # candidate voices does not rebuild the same prompt per line.
                 key = f"ref::{request.reference_audio_path}"
                 if key not in _clone_prompts:
-                    _clone_prompts[key] = tts_model.create_voice_clone_prompt(
-                        ref_audio=request.reference_audio_path,
-                        ref_text=request.reference_text or None,
-                        x_vector_only_mode=not request.reference_text,
-                    )
-                    log.info("clone prompt built from request ref=%s",
-                             request.reference_audio_path)
+                    try:
+                        _clone_prompts[key] = tts_model.create_voice_clone_prompt(
+                            ref_audio=request.reference_audio_path,
+                            ref_text=request.reference_text or None,
+                            x_vector_only_mode=not request.reference_text,
+                        )
+                        log.info("clone prompt built from request ref=%s",
+                                 request.reference_audio_path)
+                    except Exception as exc:
+                        # CustomVoice cannot clone at all. Failing here kills
+                        # the whole chapter over one misrouted request, and the
+                        # right behaviour is knowable: use the named speaker.
+                        log.warning(
+                            "cannot clone on %s (%s); falling back to the "
+                            "named speaker %r for segment %d",
+                            MODEL_ID, exc, qwen_speaker, request.segment_id)
+                        _clone_prompts[key] = None
                 clone_prompt = _clone_prompts[key]
             else:
                 clone_prompt = _clone_prompt(request.speaker,
