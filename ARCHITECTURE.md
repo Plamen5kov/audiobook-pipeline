@@ -13,7 +13,7 @@ Turn a book chapter (plain text) into a full audiobook with **distinct voices pe
 
 - **Open-source only** — no paid APIs. We learn by building, not by calling services.
 - **Plug-and-play TTS** — swap TTS engines per character role without changing other services.
-- **Code-based orchestration** — the file-server orchestrates the pipeline in Python, making the flow testable and reviewable.
+- **Code-based orchestration** — the studio-api orchestrates the pipeline in Python, making the flow testable and reviewable.
 - **English only** for now. Multi-language is a future concern.
 
 ---
@@ -49,7 +49,7 @@ Turn a book chapter (plain text) into a full audiobook with **distinct voices pe
                          GPU       GPU
 ```
 
-Each box is a **Docker container** exposing a **FastAPI HTTP API**. The **file-server** orchestrates the pipeline — calling services via async HTTP, running TTS synthesis in parallel, and writing status updates for the frontend to poll. The **NestJS backend** acts as an API gateway, proxying requests from the React frontend to the file-server.
+Each box is a **Docker container** exposing a **FastAPI HTTP API**. The **studio-api** orchestrates the pipeline — calling services via async HTTP, running TTS synthesis in parallel, and writing status updates for the frontend to poll. The **NestJS backend** acts as an API gateway, proxying requests from the React frontend to the studio-api.
 
 ---
 
@@ -273,16 +273,16 @@ POST /synthesize
   - Apply light audio cleanup (remove leading/trailing silence per clip)
 - **Tools:** ffmpeg + pydub
 
-### Pipeline Orchestrator (file-server)
+### Pipeline Orchestrator (studio-api)
 
 **Purpose:** Drive the entire pipeline end-to-end.
 
-Lives in `services/file-server/app/orchestrator.py`. Two async entry points:
+Lives in `services/studio-api/app/orchestrator.py`. Two async entry points:
 
 - **`run_analyze(client, job_id, title, text)`** — calls text-analyzer, writes status updates
 - **`run_synthesize(client, job_id, segments, voice_mapping, engine_mapping)`** — runs parallel TTS → audio-assembly, writes status updates at each stage
 
-The file-server's `/api/analyze` and `/api/synthesize` endpoints launch these as background tasks
+The studio-api's `/api/analyze` and `/api/synthesize` endpoints launch these as background tasks
 (`asyncio.create_task`) and return the `job_id` immediately. The frontend polls `/api/status/{job_id}`
 for progress.
 
@@ -294,7 +294,7 @@ written to the status file after each segment completes.
 deleted automatically.
 
 ```
-services/file-server/app/
+services/studio-api/app/
   main.py               — FastAPI endpoints, persistent httpx.AsyncClient via lifespan
   orchestrator.py       — Pipeline orchestration logic (run_analyze, run_synthesize)
 ```
@@ -312,7 +312,7 @@ The `hosted/` directory contains the user-facing web application:
 - `src/utils/` — formatError, formatDuration, encodeWav
 - `src/api.ts` — shared `request<T>()` helper for all API calls
 
-**NestJS Backend** (`hosted/backend/`) — API gateway that proxies to file-server:
+**NestJS Backend** (`hosted/backend/`) — API gateway that proxies to studio-api:
 - `src/proxy/` — split into domain controllers: HealthController, VoicesController, AudioController, StatusController, PipelineController
 - `src/filters/all-exceptions.filter.ts` — global exception filter with consistent error shape
 - `src/interceptors/logging.interceptor.ts` — request/response logging with duration
@@ -358,7 +358,7 @@ The `hosted/` directory contains the user-facing web application:
 | tts-router       | 8010  | No  | HTTP proxy — routes /synthesize to correct TTS backend |
 | audio-assembly   | 8005  | No  | FastAPI + ffmpeg/pydub              |
 | qa-verifier      | 8006  | Yes | FastAPI + Whisper (Phase 2)         |
-| file-server      | 8080  | No  | Pipeline orchestrator, file serving, status API |
+| studio-api      | 8080  | No  | Pipeline orchestrator, file serving, status API |
 
 All services have Docker healthchecks. Services that depend on model loading (text-analyzer)
 use `depends_on: condition: service_healthy` on ollama. GPU services (xtts-v2,
@@ -377,7 +377,7 @@ qwen3-tts) have a 120s `start_period` to allow model loading.
 |----------|---------|------------|-------------|
 | `LOG_LEVEL` | `INFO` | All Python services | Python logging level |
 | `OLLAMA_TIMEOUT_S` | `300` | text-analyzer | Timeout for Ollama LLM calls (seconds) |
-| `TTS_CONCURRENCY` | `3` | file-server | Max parallel TTS synthesis requests |
+| `TTS_CONCURRENCY` | `3` | studio-api | Max parallel TTS synthesis requests |
 | `TTS_BACKENDS` | (JSON) | tts-router | Engine→URL map for TTS routing |
 | `DEFAULT_ENGINE` | `xtts-v2` | tts-router | Fallback TTS engine |
 | `DGX_URL` | — | NestJS backend | File-server URL for proxying |
@@ -451,7 +451,7 @@ qwen3-tts) have a 120s `start_period` to allow model loading.
 | 2026-02-24 | `engine` field in SynthesizeRequest     | Explicit routing key preferred over implicit speaker→YAML lookup in router; caller owns the routing decision |
 | 2026-02-24 | Qwen3-TTS as second TTS engine          | Predefined voices + instruction-based emotion control; good complement to XTTS v2's voice-cloning approach |
 | 2026-02-26 | Hybrid text-analyzer pipeline            | Replaced monolithic LLM call with 8-node pipeline (6 programmatic + 2 AI). Deterministic parsing guarantees verbatim text and eliminates post-processing guards. AI used only for ambiguous speaker attribution and emotion classification. ~18s per chapter vs ~1-3min before. |
-| 2026-03-01 | Replace n8n with Python orchestrator     | n8n was untestable, unreviewable, and added an extra proxy layer. Moved pipeline logic to `file-server/app/orchestrator.py` — testable Python, parallel TTS via asyncio.Semaphore, same status-polling contract. |
+| 2026-03-01 | Replace n8n with Python orchestrator     | n8n was untestable, unreviewable, and added an extra proxy layer. Moved pipeline logic to `studio-api/app/orchestrator.py` — testable Python, parallel TTS via asyncio.Semaphore, same status-polling contract. |
 | 2026-03-01 | Persistent httpx.AsyncClient             | Per-request client creation caused connection overhead. All services now use a persistent client created at startup via FastAPI lifespan. |
 | 2026-03-01 | Sync handlers for blocking TTS/audio     | FastAPI auto-offloads sync handlers to a threadpool, preventing event loop blocking during GPU inference and audio processing. |
 | 2026-03-01 | NestJS controller split + security       | Split monolithic ProxyController into domain controllers. Added helmet, CORS restriction, rate limiting, path traversal validation, global exception filter. Enabled TypeScript strict mode. |
@@ -464,12 +464,13 @@ qwen3-tts) have a 120s `start_period` to allow model loading.
 - **2026-02-17:** Initial architecture document created. Defined 6-stage pipeline, MVP scope, and phased roadmap.
 - **2026-02-24:** Added TTS Router (`tts-router:8010`) and Qwen3-TTS (`qwen3-tts:8007`). Introduced `engine` field in shared `SynthesizeRequest` contract. voice-cast.yaml `tts_service` field now drives engine selection per character via n8n code node. Updated pipeline diagram, services table, Phase 3 status.
 - **2026-02-26:** Replaced text-analyzer's monolithic LLM approach with an 8-node hybrid pipeline. 6 programmatic nodes handle segment splitting (state machine), speaker attribution (regex + turn-taking heuristic), character registry, pause timing, and validation. 2 AI nodes handle ambiguous speaker resolution and emotion classification via targeted Ollama calls. Added per-node `report` field to the API response for timing/attribution breakdown. Same API contract — downstream services unchanged.
+- **2026-08-16:** Restructured around what the repo is for. The analysis moved out of the text-analyzer service into `core/`, which may not import a web framework or an HTTP library, and which the service, the corpus builder and the offline tools now import normally instead of through two sys.path hacks. Voice assignment and QA scoring joined it as `core.casting` and `core.verification`. `file-server` became `studio-api`, a route module per responsibility rather than 367 lines of four unrelated jobs. Every stage now writes its result into `output/workspace/<job>/`, numbered in pipeline order, with a manifest and a per-segment fingerprint, so a run can be inspected afterwards and synthesis renders only what changed. Segment audio is kept rather than deleted after assembly. `tools/job.py` reads all of it from the terminal.
 - **2026-08-16:** Added the normalisation node, the first built on the new node contract. Segments now carry `spoken_text` beside `original_text`: the synthesiser and QA use the spoken form, validation keeps proving the verbatim one reconstructs the source. Measured on the chapters to be narrated, 130 `***` scene breaks were reaching TTS as literal text; they are now removed and the beat survives as a scene-break pause. The stat block QA caught being synthesised as "Item I can send in rank legendary consumable effect uses remaining 101 bako" now reads as "Item: World-Phoenix Token, transcendent rank, legendary. (consumable). Uses remaining: one out of one". Acronyms are deliberately not pattern-matched, since `THAT` and `II` occur alongside `CIA` and `EDJI`; they go through a per-book lexicon instead.
 - **2026-08-16:** Formalised the text-analyzer pipeline as a registry of nodes. Every node now satisfies one contract (`name`, `node_type`, `requires`, `assigns`, `run(ctx)`) and reads and writes a shared `AnalysisContext` instead of a bespoke argument list, so inserting a step is an edit to a list rather than a change to its neighbours. `Pipeline` holds the ordered nodes and offers `insert_before`, `insert_after`, `replace` and `remove`; `problems()` reports an unworkable order before anything runs, in the manner of spaCy's `analyze_pipes`. Node modules are discovered from the package, so adding one edits no existing file. The narration-neutral override that lived inside the runner became the `narration_defaults` node, taking the pipeline to 9. AI nodes now depend on an `LLMClient` protocol rather than an Ollama URL, which moved the transport out of `nodes/` and let the full pipeline be tested against a scripted fake with no network. Timing moved from a per-node decorator to the runner. Same API contract; the `report.nodes` list gains a ninth entry.
 - **2026-03-01:** Major refactoring across all layers:
-  - **Removed n8n.** Pipeline orchestration moved to `services/file-server/app/orchestrator.py` — two async functions (`run_analyze`, `run_synthesize`) replace both n8n workflows. Parallel TTS via `asyncio.Semaphore`. Post-assembly intermediate file cleanup. Status-polling contract unchanged.
+  - **Removed n8n.** Pipeline orchestration moved to `services/studio-api/app/orchestrator.py` — two async functions (`run_analyze`, `run_synthesize`) replace both n8n workflows. Parallel TTS via `asyncio.Semaphore`. Post-assembly intermediate file cleanup. Status-polling contract unchanged.
   - **Fixed critical Python bugs.** Converted blocking async TTS/audio handlers to sync (FastAPI threadpool offloading). Replaced per-request `httpx.AsyncClient` with persistent clients via lifespan. Fixed XTTS-v2 hardcoded voice cast (now loads from voice-cast.yaml). Fixed tts-router silently dropping unknown fields (now forwards raw request body). Added Ollama timeout (300s default). Added audio normalization guard for silent audio.
   - **Python best practices.** Migrated all services from deprecated `@app.on_event("startup")` to `@asynccontextmanager lifespan`. Standardized health checks (`{"status": "ok", "service": "<name>"}`). Added Docker healthchecks to all services with `depends_on: condition: service_healthy`. Unified logging with configurable `LOG_LEVEL`. Added `.dockerignore` to all services. Pinned all dependencies.
   - **React frontend refactoring.** Extracted `usePipeline`, `usePolling`, `useAudioPreview`, `useVoiceRecorder` hooks. Split VoiceManager into sub-components (VoiceRecorder, VoiceList). Extracted SegmentCard from PostProduction. Deduplicated constants (engines, emotions), utilities (formatError, formatDuration, encodeWav), and types. Fixed stale closure bugs. Replaced `alert()` with inline validation. Split monolithic CSS into component-scoped files.
   - **NestJS backend hardening.** Restricted CORS to configured origin. Added helmet middleware, rate limiting (`@nestjs/throttler`), path traversal validation pipe. Created global `AllExceptionsFilter` and `LoggingInterceptor`. Split monolithic `ProxyController` into `HealthController`, `VoicesController`, `AudioController`, `StatusController`, `PipelineController`. Enabled TypeScript strict mode. Optimized Dockerfile (`npm ci --omit=dev`).
-  - **Testing infrastructure.** Added pytest suites for text-analyzer (16 tests: segment splitter, explicit attribution, validation) and file-server orchestrator (3 tests with httpx mock transport). All 19 tests passing. Added `.env.example`.
+  - **Testing infrastructure.** Added pytest suites for text-analyzer (16 tests: segment splitter, explicit attribution, validation) and studio-api orchestrator (3 tests with httpx mock transport). All 19 tests passing. Added `.env.example`.

@@ -110,20 +110,39 @@ voices:
 
 ```
 audiobook-pipeline/
+  core/                Domain logic, no HTTP and no framework
+    analysis/          Text into attributed, speakable segments
+    casting/           Who gets which voice
+    verification/      Scoring a transcription against the intended text
+    jobs/              Job workspace: stage artifacts and what needs redoing
   hosted/
     frontend/          React + Vite PWA
     backend/           NestJS API gateway
   services/
-    text-analyzer/     Hybrid 10-node analysis pipeline
-    file-server/       Pipeline orchestrator + file serving
+    text-analyzer/     HTTP wrapper over core.analysis
+    studio-api/        Drives runs, serves artifacts, reports progress
     xtts-v2/           XTTS v2 TTS service
     qwen3-tts/         Qwen3-TTS service
     tts-router/        Engine routing proxy
     audio-assembly/    ffmpeg-based audio concatenation
     qa-verifier/       Whisper-based QA (Phase 2)
+  output/workspace/    Per-run artifacts, one directory per stage
   voices/              Reference audio clips
   voice-cast.yaml      Character-to-voice mapping
   docker-compose.yml
+```
+
+## Looking inside a run
+
+Every stage keeps what it produced, under `output/workspace/<job>/`, in
+directories numbered in pipeline order. Synthesis fingerprints each segment, so
+changing one line renders one line rather than the chapter.
+
+```bash
+python3 tools/job.py list
+python3 tools/job.py show <job>
+python3 tools/job.py segments <job> --failed
+python3 tools/job.py redo <job> 12 40
 ```
 
 ## License
