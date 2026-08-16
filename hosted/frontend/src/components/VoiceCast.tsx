@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Voice, Segment, voiceUrl } from '../api';
-import { QWEN_VOICES, QWEN_DEFAULT, Engine } from '../constants/engines';
+import { QWEN_VOICES, QWEN_DEFAULT, QWEN_PRESET_ENGINE, Engine } from '../constants/engines';
 import { useAudioPreview } from '../hooks/useAudioPreview';
 import './VoiceCast.css';
 
@@ -48,7 +48,7 @@ export function VoiceCast({ segments, voices, onGenerate, disabled = false }: Pr
     setEngines(prev => ({ ...prev, [speaker]: engine }));
     setSelected(prev => ({
       ...prev,
-      [speaker]: engine === 'qwen3-tts'
+      [speaker]: engine === QWEN_PRESET_ENGINE
         ? QWEN_DEFAULT
         : pickDefault(speaker, speakers.indexOf(speaker), displayVoices),
     }));
@@ -88,7 +88,7 @@ export function VoiceCast({ segments, voices, onGenerate, disabled = false }: Pr
 
       {speakers.map((speaker) => {
         const engine = engines[speaker] ?? 'xtts-v2';
-        const isQwen = engine === 'qwen3-tts';
+        const isQwen = engine === QWEN_PRESET_ENGINE;
 
         return (
           <div key={speaker} className="cast-row">
@@ -104,7 +104,7 @@ export function VoiceCast({ segments, voices, onGenerate, disabled = false }: Pr
                 </button>
                 <button
                   className={isQwen ? 'active' : ''}
-                  onClick={() => switchEngine(speaker, 'qwen3-tts')}
+                  onClick={() => switchEngine(speaker, QWEN_PRESET_ENGINE)}
                   title="9 predefined voices with emotion control"
                 >
                   Qwen3

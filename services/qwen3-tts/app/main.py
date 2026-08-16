@@ -346,6 +346,17 @@ def synthesize(request: SynthesizeRequest):
             else:
                 clone_prompt = _clone_prompt(request.speaker,
                                              (request.emotion or "neutral").lower())
+            if clone_prompt is not None and request.qwen_speaker.strip():
+                # A caller asked for a named voice and is getting a cloned one,
+                # because this checkpoint has no presets and the voice bank has
+                # a clip for this speaker. Silently substituting is how a cast
+                # choice disappears without a trace; route to the CustomVoice
+                # deployment (engine "qwen3-preset") to actually get the preset.
+                log.warning(
+                    "preset %r ignored: %s has no preset speakers, cloning %r "
+                    "from the voice bank instead. Use engine 'qwen3-preset' "
+                    "for named voices.",
+                    request.qwen_speaker.strip(), MODEL_ID, request.speaker)
             _generate_audio(request.text, qwen_speaker, instruct, output_path,
                             request.speed, clone_prompt)
         except Exception as exc:
