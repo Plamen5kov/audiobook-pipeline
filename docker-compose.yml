@@ -60,7 +60,9 @@ services:
     restart: unless-stopped
 
   text-analyzer:
-    build: ./services/text-analyzer
+    build:
+      context: .
+      dockerfile: services/text-analyzer/Dockerfile
     ports:
       - "8001:8001"
     environment:

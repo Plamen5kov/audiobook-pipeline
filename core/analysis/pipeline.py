@@ -1,6 +1,9 @@
 """The analysis pipeline: an ordered list of nodes and a runner for it.
 
 The pipeline holds nodes, times them, and hands each one the shared context.
+It builds no clients and reads no configuration: whoever runs it supplies a
+prepared context, which is what keeps this importable by a service, by the
+corpus builder and by a script alike.
 It knows nothing about what any node does, so adding a step is a change to
 ``DEFAULT_PIPELINE`` or a call to ``insert_after``, never a change here.
 
@@ -179,21 +182,6 @@ async def run_analysis(ctx: AnalysisContext,
     )
 
 
-async def run_pipeline(
-    text: str,
-    title: str,
-    ollama_url: str,
-    model_name: str,
-) -> PipelineResult:
-    """Run the default pipeline over a chapter. The service's entry point."""
-    # Imported here, not at module scope: it is the only thing in the analysis
-    # that needs an HTTP library, and the rest must stay importable without one.
-    from .ollama_client import OllamaClient
-
-    ctx = AnalysisContext(
-        text=text, title=title, llm=OllamaClient(ollama_url, model_name),
-    )
-    return await run_analysis(ctx)
 
 
 

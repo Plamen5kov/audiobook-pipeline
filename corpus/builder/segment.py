@@ -1,6 +1,6 @@
 """Turn chapter text into attributed segments.
 
-Reuses the text-analyzer service's deterministic nodes directly: the splitter,
+Reuses core's deterministic analysis nodes directly: the splitter,
 explicit attribution, turn taking, and the character registry are pure Python
 with no GPU and no model server behind them, so a whole book can be segmented
 on the workstation. The two Ollama-backed nodes (AI attribution, emotion) are
@@ -15,11 +15,11 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
-_ANALYZER = Path(__file__).resolve().parents[2] / "services" / "text-analyzer"
-if str(_ANALYZER) not in sys.path:
-    sys.path.insert(0, str(_ANALYZER))
+_REPO = Path(__file__).resolve().parents[2]
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
 
-from app.nodes import (  # noqa: E402
+from core.analysis.nodes import (  # noqa: E402
     character_registry,
     explicit_attribution,
     segment_splitter,

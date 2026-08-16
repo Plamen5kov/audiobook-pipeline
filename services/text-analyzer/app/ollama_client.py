@@ -1,7 +1,8 @@
-"""Shared Ollama HTTP helper for AI-powered pipeline nodes.
+"""The Ollama transport, and the LLMClient the service runs with.
 
-Provides a single async function that handles the HTTP call, error
-handling, and JSON parsing common to ai_attribution and emotion_classifier.
+This lives in the service rather than in core because it needs httpx. Core
+knows only the ``LLMClient`` protocol, which is what lets the corpus builder
+and the offline scripts import the analysis without an HTTP library.
 """
 
 from __future__ import annotations

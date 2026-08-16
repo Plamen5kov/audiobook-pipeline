@@ -21,9 +21,9 @@ from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "services" / "text-analyzer"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.nodes import (  # noqa: E402
+from core.analysis.nodes import (  # noqa: E402
     explicit_attribution, normalisation, pause_timing, segment_splitter,
     turn_taking,
 )

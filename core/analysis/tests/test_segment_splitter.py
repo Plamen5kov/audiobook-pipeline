@@ -1,6 +1,6 @@
 """Tests for the segment splitter (Node 1)."""
 
-from app.nodes.segment_splitter import split_segments
+from core.analysis.nodes.segment_splitter import split_segments
 
 
 def test_simple_dialogue_and_narration():

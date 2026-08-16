@@ -6,7 +6,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from .pipeline import run_pipeline
+from core.analysis.models import AnalysisContext
+from core.analysis.pipeline import run_analysis
+
+from .ollama_client import OllamaClient
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
@@ -56,12 +59,12 @@ async def analyze_text(request: AnalyzeRequest):
     log.info("POST /analyze — title=%r text_length=%d", request.title, len(request.text))
     log.info("Text preview: %.200s", request.text)
 
-    result = await run_pipeline(
+    ctx = AnalysisContext(
         text=request.text,
         title=request.title,
-        ollama_url=OLLAMA_BASE_URL,
-        model_name=MODEL_NAME,
+        llm=OllamaClient(OLLAMA_BASE_URL, MODEL_NAME),
     )
+    result = await run_analysis(ctx)
 
     return AnalyzeResponse(
         title=result.title,

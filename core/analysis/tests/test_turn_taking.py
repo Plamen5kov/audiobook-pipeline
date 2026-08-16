@@ -4,8 +4,8 @@ Motivated by a real chapter where 35 of 98 segments stayed 'unknown' and were
 cast to a separate voice, so the protagonist audibly changed voice mid-chapter.
 """
 
-from app.models import Segment
-from app.nodes.turn_taking import apply_turn_taking
+from core.analysis.models import Segment
+from core.analysis.nodes.turn_taking import apply_turn_taking
 
 
 def _segs(specs):

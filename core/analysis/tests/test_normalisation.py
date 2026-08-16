@@ -8,14 +8,14 @@ blocks in book one, one of which QA caught being synthesised as gibberish.
 
 import asyncio
 
-from app.models import AnalysisContext, Segment
-from app.nodes.normalisation import (
+from core.analysis.models import AnalysisContext, Segment
+from core.analysis.nodes.normalisation import (
     normalise_segments,
     normalise_text,
     number_words,
 )
-from app.nodes.pause_timing import PAUSE_SCENE_BREAK
-from app.pipeline import DEFAULT_PIPELINE, Pipeline, run_analysis
+from core.analysis.nodes.pause_timing import PAUSE_SCENE_BREAK
+from core.analysis.pipeline import DEFAULT_PIPELINE, Pipeline, run_analysis
 
 
 def spoken(text, lexicon=None):

@@ -10,9 +10,9 @@ import asyncio
 
 import pytest
 
-from app.models import AnalysisContext
-from app.nodes.base import Node, create, register, registered
-from app.pipeline import DEFAULT_PIPELINE, Pipeline, PipelineOrderError, run_analysis
+from core.analysis.models import AnalysisContext
+from core.analysis.nodes.base import Node, create, register, registered
+from core.analysis.pipeline import DEFAULT_PIPELINE, Pipeline, PipelineOrderError, run_analysis
 
 TEXT = (
     "Jason looked at the door.\n\n"

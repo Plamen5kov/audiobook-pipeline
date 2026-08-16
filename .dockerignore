@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.git
+.pytest_cache/
+corpus/work/
+corpus/data/
+corpus/voicebank/
+data/
+output/
+voicebank/
+node_modules/
+core/analysis/tests/

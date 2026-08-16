@@ -1,7 +1,7 @@
 """Tests for explicit attribution (Node 2)."""
 
-from app.models import Segment
-from app.nodes.explicit_attribution import attribute_explicit
+from core.analysis.models import Segment
+from core.analysis.nodes.explicit_attribution import attribute_explicit
 
 
 def _make_segments(specs: list[tuple[str, str, str]]) -> list[Segment]:

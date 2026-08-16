@@ -1,7 +1,7 @@
 """Tests for the validation node (Node 6)."""
 
-from app.models import Segment
-from app.nodes.validation import validate_completeness
+from core.analysis.models import Segment
+from core.analysis.nodes.validation import validate_completeness
 
 
 def _seg(id: int, text: str) -> Segment:
