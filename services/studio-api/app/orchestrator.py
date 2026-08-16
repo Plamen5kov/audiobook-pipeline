@@ -25,22 +25,17 @@ import httpx
 
 from core.casting.voices import build_voice_mapping
 from core.jobs.fingerprint import plan, segment_fingerprint
-from core.jobs.workspace import Workspace
+
+from .config import workspace
 
 log = logging.getLogger(__name__)
 
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "/output")
 
-# Where each run leaves its stage artifacts. Under OUTPUT_DIR by default so it
-# lands on a volume that already exists.
-WORKSPACE_DIR = os.getenv("WORKSPACE_DIR", os.path.join(OUTPUT_DIR, "workspace"))
-
 
 def _job(job_id: str):
-    """The workspace directory for a run. Never lets a failure here stop the
-    pipeline: losing the record of a run is worse than not having one, but not
-    worse than not producing the audio."""
-    return Workspace(Path(WORKSPACE_DIR)).job(job_id, create=True)
+    """The workspace directory for a run."""
+    return workspace().job(job_id, create=True)
 
 # Concurrency limit for parallel TTS calls.
 TTS_CONCURRENCY = int(os.getenv("TTS_CONCURRENCY", "3"))

@@ -82,6 +82,22 @@ Each run writes to `output/workspace/<job-id>/`, numbered in pipeline order:
 manifest.json  per-stage status, and a fingerprint per segment
 ```
 
+The same information is on the studio API, which is what the frontend uses:
+
+```
+GET  /api/jobs                                    every run, how far it got
+GET  /api/jobs/{job}                              stages and what each produced
+GET  /api/jobs/{job}/stages/{stage}               that stage's artifact
+GET  /api/jobs/{job}/segments[?failed&speaker]    every line, joined with its
+                                                  clip state and QA verdict
+GET  /api/jobs/{job}/segments/{id}/audio          listen to one take
+POST /api/jobs/{job}/redo  {"segments":[12,40]}   render those again next run
+```
+
+The segments view joins the analysis, the manifest and the QA report, because
+that correlation is the question being asked and doing it in the frontend would
+mean three fetches and a join per screen.
+
 ```bash
 python3 tools/job.py list                  # every run, how far it got
 python3 tools/job.py show <job>            # stages and artifacts

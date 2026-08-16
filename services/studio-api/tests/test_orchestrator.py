@@ -155,12 +155,9 @@ def _segments(second_text="And then he left."):
 
 
 def _job(job_id):
-    from pathlib import Path
+    from app.config import workspace
 
-    from app.orchestrator import WORKSPACE_DIR
-    from core.jobs.workspace import Workspace
-
-    return Workspace(Path(WORKSPACE_DIR)).job(job_id)
+    return workspace().job(job_id)
 
 
 def _transport():

@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .config import STATIC_DIR
-from .routes import audio, health, jobs, status, voices
+from .routes import audio, health, jobs, status, voices, workspace
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO").upper(),
@@ -46,7 +46,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for module in (voices, audio, status, jobs, health):
+for module in (voices, audio, status, jobs, workspace, health):
     app.include_router(module.router)
 
 # The frontend is mounted last so API routes take priority.
