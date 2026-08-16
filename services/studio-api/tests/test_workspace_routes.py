@@ -92,7 +92,36 @@ def test_a_traversing_job_id_is_refused():
 def test_a_stage_artifact_comes_back_as_written():
     r = client.get("/api/jobs/ch1001/stages/analysis")
     assert r.status_code == 200
-    assert r.json()["artifacts"]["segments.json"]["segments"][0]["id"] == 1
+    body = r.json()
+    assert body["artifacts"]["segments.json"]["segments"][0]["id"] == 1
+    assert body["status"] == "done"
+
+
+def test_a_stage_that_ran_but_wrote_no_directory_is_not_a_404():
+    """Synthesis and assembly record what they did but write their output to
+    other volumes. Judging by directory alone called them never-run."""
+    _seed("ch-assembled")
+    job = workspace().job("ch-assembled")
+    job.record_stage("assembly", "done", output="chapter.mp3", clips=2)
+
+    r = client.get("/api/jobs/ch-assembled/stages/assembly")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "done"
+    assert body["recorded"] == {"output": "chapter.mp3", "clips": 2}
+
+
+def test_synthesis_reports_the_takes_from_the_ledger():
+    r = client.get("/api/jobs/ch1001/stages/synthesis")
+    assert r.status_code == 200
+    clips = r.json()["clips"]
+    assert [c["id"] for c in clips] == [1, 2]
+    assert all(c["present"] for c in clips)
+
+
+def test_a_stage_with_neither_a_record_nor_a_directory_is_still_a_404():
+    _seed("ch-bare", with_qa=False, with_clips=False)
+    assert client.get("/api/jobs/ch-bare/stages/assembly").status_code == 404
 
 
 def test_an_audio_stage_lists_its_files():

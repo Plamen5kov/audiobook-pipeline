@@ -244,10 +244,21 @@ export interface SegmentsResponse {
   segments: WorkspaceSegment[];
 }
 
+export interface StageClip {
+  id: number;
+  fingerprint: string;
+  clip: string;
+  present: boolean;
+}
+
 export interface StageArtifacts {
   stage: string;
+  status: string;
+  at?: string | null;
+  recorded?: Record<string, unknown>;
   artifacts?: Record<string, unknown>;
   files?: string[];
+  clips?: StageClip[];
 }
 
 export async function listJobs(): Promise<JobSummary[]> {

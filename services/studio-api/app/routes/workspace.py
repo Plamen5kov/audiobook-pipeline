@@ -63,7 +63,14 @@ async def get_job(job_id: str):
 
 @router.get("/{job_id}/stages/{stage}")
 async def get_stage_artifact(job_id: str, stage: str):
-    """The JSON a stage produced, as it was written."""
+    """What a stage produced.
+
+    The manifest decides whether a stage ran, not the presence of a directory.
+    Synthesis and assembly record what they did but write their output
+    elsewhere — the clips go to the volume shared with assembly, the finished
+    audio to the output directory — so judging by directory alone reported two
+    finished stages as never having run.
+    """
     job = _job(job_id)
     try:
         stage_dirname(stage)
@@ -71,18 +78,39 @@ async def get_stage_artifact(job_id: str, stage: str):
         raise HTTPException(status_code=400,
                             detail=f"Unknown stage: {stage}. Known: {', '.join(STAGES)}")
 
+    entry = job.manifest()["stages"].get(stage)
     directory = job.stage_dir(stage)
-    if not directory.is_dir():
+    if entry is None and not directory.is_dir():
         raise HTTPException(status_code=404, detail=f"Stage {stage} has not run")
 
-    artifacts = {}
-    for path in sorted(directory.glob("*.json")):
-        artifacts[path.name] = job.read_json(stage, path.name)
-    if not artifacts:
-        # A stage whose output is audio rather than JSON still has contents
-        # worth reporting, so say what is there instead of 404ing.
-        return {"stage": stage, "files": sorted(p.name for p in directory.iterdir())}
-    return {"stage": stage, "artifacts": artifacts}
+    payload: dict = {
+        "stage": stage,
+        "status": (entry or {}).get("status", "unknown"),
+        "at": (entry or {}).get("at"),
+        "recorded": {k: v for k, v in (entry or {}).items()
+                     if k not in ("status", "at", "artifact")},
+    }
+
+    if directory.is_dir():
+        artifacts = {p.name: job.read_json(stage, p.name)
+                     for p in sorted(directory.glob("*.json"))}
+        if artifacts:
+            payload["artifacts"] = artifacts
+        others = sorted(p.name for p in directory.iterdir()
+                        if p.suffix.lower() != ".json")
+        if others:
+            payload["files"] = others
+
+    if stage == "synthesis":
+        # The takes are the artifact here, and they live in the ledger rather
+        # than in the stage directory.
+        payload["clips"] = [
+            {"id": int(sid), **rec, "present": clip_exists(job, rec["clip"])}
+            for sid, rec in sorted(job.manifest()["segments"].items(),
+                                   key=lambda kv: int(kv[0]))
+        ]
+
+    return payload
 
 
 @router.get("/{job_id}/segments")
