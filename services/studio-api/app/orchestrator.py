@@ -1,8 +1,12 @@
 """Pipeline orchestrator.
 
-Two async functions drive the pipeline end-to-end, writing status
-updates directly via the write_status helper so the frontend can poll
-for progress.
+Two async functions drive the pipeline end-to-end, writing status updates so
+the frontend can poll for progress.
+
+Each stage also leaves its result in the job's workspace directory, which is
+what makes a run inspectable after the fact rather than only while it is
+happening. Synthesis consults the manifest first and renders only the segments
+whose text or delivery actually changed, so editing one line costs one line.
 """
 
 from __future__ import annotations
@@ -13,16 +17,30 @@ import logging
 import math
 import os
 import time
+from pathlib import Path
 from typing import Any
 
 import aiofiles
 import httpx
 
 from core.casting.voices import build_voice_mapping
+from core.jobs.fingerprint import plan, segment_fingerprint
+from core.jobs.workspace import Workspace
 
 log = logging.getLogger(__name__)
 
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "/output")
+
+# Where each run leaves its stage artifacts. Under OUTPUT_DIR by default so it
+# lands on a volume that already exists.
+WORKSPACE_DIR = os.getenv("WORKSPACE_DIR", os.path.join(OUTPUT_DIR, "workspace"))
+
+
+def _job(job_id: str):
+    """The workspace directory for a run. Never lets a failure here stop the
+    pipeline: losing the record of a run is worse than not having one, but not
+    worse than not producing the audio."""
+    return Workspace(Path(WORKSPACE_DIR)).job(job_id, create=True)
 
 # Concurrency limit for parallel TTS calls.
 TTS_CONCURRENCY = int(os.getenv("TTS_CONCURRENCY", "3"))
@@ -37,10 +55,10 @@ QA_VERIFIER_URL = os.getenv("QA_VERIFIER_URL", "http://qa-verifier:8006")
 # cleanup deletes the per-segment audio.
 QA_ENABLED = os.getenv("QA_ENABLED", "true").lower() not in ("false", "0", "no")
 QA_TIMEOUT_S = float(os.getenv("QA_TIMEOUT_S", "3600"))
-# Keep the per-segment audio when QA flags failures, so the bad clips can be
-# listened to instead of being deleted with everything else.
-QA_KEEP_INTERMEDIATE_ON_FAIL = os.getenv(
-    "QA_KEEP_INTERMEDIATE_ON_FAIL", "true").lower() not in ("false", "0", "no")
+# Keep the per-segment audio after assembly. It is the material for both
+# inspection and reuse; the manifest points at it, so discarding it also
+# discards the ability to re-render one line instead of a chapter.
+KEEP_CLIPS = os.getenv("KEEP_CLIPS", "true").lower() not in ("false", "0", "no")
 
 
 # ---------------------------------------------------------------------------
@@ -107,6 +125,15 @@ async def run_analyze(
         segments = result.get("segments", [])
         characters = result.get("characters", [])
 
+        job = _job(job_id)
+        job.write_text("input", "chapter.txt", text)
+        job.record_stage("input", "done", artifact="chapter.txt",
+                         characters_of_text=len(text))
+        job.write_json("analysis", "segments.json",
+                       {"title": title, "characters": characters, "segments": segments})
+        job.record_stage("analysis", "done", artifact="segments.json",
+                         segments=len(segments), characters=len(characters))
+
         # Status: analyzing → done
         await _write_status(job_id, {
             "phase": "analyzing",
@@ -125,6 +152,7 @@ async def run_analyze(
 
     except Exception as exc:
         log.error("analyze failed: job_id=%s error=%s", job_id, exc)
+        _job(job_id).record_stage("analysis", "failed", error=str(exc))
         await _write_status(job_id, {
             "phase": "analyzing",
             "status": "error",
@@ -147,9 +175,15 @@ async def run_synthesize(
     voice_mapping: dict[str, str],
     engine_mapping: dict[str, str],
     characters: list[dict[str, Any]] | None = None,
+    force: set[int] | None = None,
 ) -> None:
-    """Run parallel TTS → audio-assembly, writing status updates at each
-    stage so the frontend can show live progress."""
+    """Run TTS → audio-assembly, writing status updates at each stage so the
+    frontend can show live progress.
+
+    *force* names segments to render again even if nothing about them changed,
+    which is how "do that line once more" is expressed when the input is
+    identical and only the take was unsatisfying.
+    """
     total = len(segments)
     tts_started = _now()
 
@@ -157,6 +191,28 @@ async def run_synthesize(
     # stays fixed for the whole chapter. Explicit choices are preserved.
     speakers = sorted({s.get("speaker", "default") for s in segments})
     voice_mapping = build_voice_mapping(characters or [], speakers, voice_mapping)
+
+    job = _job(job_id)
+    job.write_json("cast", "cast.json", {
+        "voice_mapping": voice_mapping,
+        "engine_mapping": engine_mapping,
+        "characters": characters or [],
+    })
+    job.record_stage("cast", "done", artifact="cast.json", voices=len(voice_mapping))
+
+    def _engine_of(seg):
+        return engine_mapping.get(seg.get("speaker", "default"), "xtts-v2")
+
+    def _voice_of(seg):
+        return voice_mapping.get(seg.get("speaker", "default"), "")
+
+    # Only render what changed. A segment whose text and delivery are untouched
+    # already has a clip, and re-rendering the chapter to fix one line is the
+    # thing this exists to avoid.
+    to_render, reused = plan(segments, job, _voice_of, _engine_of, force=force or set())
+    if reused:
+        log.info("synthesize: %d of %d segments already current",
+                 len(reused), len(segments))
 
     try:
         # ── Status: synthesizing → running (tts-router) ───────────
@@ -174,10 +230,10 @@ async def run_synthesize(
 
         # ── Apply voice mapping ────────────────────────────────────
         tts_requests: list[dict[str, Any]] = []
-        for seg in segments:
+        for seg in to_render:
             speaker = seg.get("speaker", "default")
-            engine = engine_mapping.get(speaker, "xtts-v2")
-            voice_value = voice_mapping.get(speaker, "")
+            engine = _engine_of(seg)
+            voice_value = _voice_of(seg)
             reference_audio_path = (
                 f"/voices/xtts/{voice_value or 'generic_neutral.wav'}"
                 if engine != "qwen3-tts"
@@ -198,7 +254,7 @@ async def run_synthesize(
 
         # ── Parallel TTS via semaphore ─────────────────────────────
         semaphore = asyncio.Semaphore(TTS_CONCURRENCY)
-        completed_count = 0
+        completed_count = len(reused)
         tts_results: list[dict[str, Any]] = [{}] * len(tts_requests)
 
         async def synthesize_one(idx: int, req: dict[str, Any]) -> None:
@@ -252,13 +308,26 @@ async def run_synthesize(
         pause_map: dict[int, int] = {
             seg["id"]: seg.get("pause_before_ms", 0) for seg in segments
         }
+        # Clips come from two places now: what was just rendered, and what was
+        # already current. Assembly needs them in reading order regardless.
+        clip_paths: dict[int, str] = {r["id"]: r["_clip"] for r in reused}
+        for seg, result in zip(to_render, tts_results):
+            if not result:
+                continue
+            path = result["file_path"]
+            clip_paths[result["segment_id"]] = path
+            job.record_segment(result["segment_id"], seg["_fingerprint"], path)
+        job.record_stage("synthesis", "done",
+                         rendered=len(to_render), reused=len(reused))
+
         clips = [
             {
-                "id": r["segment_id"],
-                "file_path": r["file_path"],
-                "pause_before_ms": pause_map.get(r["segment_id"], 0),
+                "id": seg["id"],
+                "file_path": clip_paths[seg["id"]],
+                "pause_before_ms": pause_map.get(seg["id"], 0),
             }
-            for r in tts_results
+            for seg in segments
+            if seg["id"] in clip_paths
         ]
         output_filename = f"chapter_{int(time.time() * 1000)}.mp3"
 
@@ -293,8 +362,14 @@ async def run_synthesize(
                 "qa-verifier": {"status": "running", "started": qa_started},
             },
         })
+        job.record_stage("assembly", "done", output=output_file, clips=len(clips))
+
         qa_report = await _run_qa(client, segments, clips)
         qa_finished = _now()
+        job.write_json("qa", "report.json", qa_report)
+        job.record_stage("qa", qa_report.get("status", "skipped"),
+                         artifact="report.json",
+                         failed=qa_report.get("failed_count", 0))
 
         # ── Status: done ───────────────────────────────────────────
         await _write_status(job_id, {
@@ -319,11 +394,18 @@ async def run_synthesize(
                  job_id, output_file, qa_report.get("status"))
 
         # ── Post-assembly cleanup ──────────────────────────────────
-        if QA_KEEP_INTERMEDIATE_ON_FAIL and qa_report.get("failed_count"):
-            log.warning("cleanup: keeping %d intermediate files for inspection "
-                        "(%d segments failed QA)", len(clips), qa_report["failed_count"])
+        # The per-segment audio is kept. It is what a later run reuses instead
+        # of re-rendering, and what you listen to when a line sounds wrong, so
+        # deleting it is the expensive choice rather than the tidy one. Set
+        # KEEP_CLIPS=false to get the old behaviour, at the cost of making the
+        # next run render the whole chapter again.
+        if KEEP_CLIPS:
+            log.info("keeping %d segment clips for reuse and inspection", len(clips))
         else:
             _cleanup_intermediate(clips)
+            for seg in segments:
+                job.forget_segment(seg["id"])
+            job.save()
 
     except Exception as exc:
         log.error("synthesize failed: job_id=%s error=%s", job_id, exc)
