@@ -5,7 +5,7 @@ character was voiced by a woman, and the same character changed voice partway
 through.
 """
 
-from app.autocast import (
+from core.casting.voices import (
     QWEN_FEMALE,
     QWEN_MALE,
     NARRATOR_VOICE,

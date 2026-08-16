@@ -18,7 +18,7 @@ from typing import Any
 import aiofiles
 import httpx
 
-from .autocast import build_voice_mapping
+from core.casting.voices import build_voice_mapping
 
 log = logging.getLogger(__name__)
 

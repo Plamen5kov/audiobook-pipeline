@@ -162,7 +162,9 @@ services:
     restart: unless-stopped
 
   qa-verifier:
-    build: ./services/qa-verifier
+    build:
+      context: .
+      dockerfile: services/qa-verifier/Dockerfile
     ports:
       - "8006:8006"
     volumes:
@@ -191,8 +193,10 @@ services:
               capabilities: [gpu]
     restart: unless-stopped
 
-  file-server:
-    build: ./services/file-server
+  studio-api:
+    build:
+      context: .
+      dockerfile: services/studio-api/Dockerfile
     ports:
       - "8080:8080"
     volumes:

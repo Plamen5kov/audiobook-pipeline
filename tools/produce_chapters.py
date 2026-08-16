@@ -1,6 +1,6 @@
 """Synthesize, assemble and verify chapters from text-analyzer output.
 
-Drives the running services directly rather than going through the file-server
+Drives the running services directly rather than going through the studio-api
 orchestrator, because the analysis has already been done and re-running it
 would spend Ollama time to reach the same answer.
 

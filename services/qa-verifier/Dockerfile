@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY services/qa-verifier/requirements.txt .
 
 # Install CUDA-enabled torch first. PyPI default aarch64 wheel is CPU-only.
 # cu130 matches CUDA 13.0 on the DGX Spark GB10.
@@ -17,7 +17,9 @@ RUN pip install --no-cache-dir \
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app/ ./app/
+# Build context is the repo root: the scoring lives in core/.
+COPY core/ ./core/
+COPY services/qa-verifier/app/ ./app/
 
 # Whisper weights are downloaded from HuggingFace on first startup and cached
 # in a named volume.

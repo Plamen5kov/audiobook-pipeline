@@ -2,30 +2,13 @@
 
 These lock the normalisation rules: the score must ignore differences that are
 artefacts of ASR-vs-TTS orthography, while still catching real content errors.
+
+The scoring is pure, so this imports it directly. It used to stub out torch,
+transformers, fastapi and pydantic to get at these two functions, which is the
+cost the extraction into core removed.
 """
 
-import sys
-import types
-
-# Import the comparison helpers without pulling in torch/transformers, which
-# are only needed for the ASR model itself.
-for name in ("torch", "transformers", "fastapi", "pydantic"):
-    if name not in sys.modules:
-        stub = types.ModuleType(name)
-        if name == "torch":
-            stub.cuda = types.SimpleNamespace(is_available=lambda: False)
-            stub.float16 = stub.float32 = None
-        if name == "transformers":
-            stub.pipeline = lambda *a, **k: None
-        if name == "fastapi":
-            stub.FastAPI = lambda *a, **k: types.SimpleNamespace(
-                get=lambda *a, **k: (lambda f: f), post=lambda *a, **k: (lambda f: f))
-            stub.HTTPException = Exception
-        if name == "pydantic":
-            stub.BaseModel = object
-        sys.modules[name] = stub
-
-from app.main import normalise, similarity  # noqa: E402
+from core.verification.similarity import normalise, similarity
 
 
 def test_identical_text_scores_one():

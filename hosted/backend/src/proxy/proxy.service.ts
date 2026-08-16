@@ -20,7 +20,7 @@ export class ProxyService {
     const raw = config.get<string>('DGX_URL');
     if (!raw) {
       throw new Error(
-        'DGX_URL environment variable is required. Set it to the DGX file-server URL (e.g. http://host:8080).',
+        'DGX_URL environment variable is required. Set it to the DGX studio-api URL (e.g. http://host:8080).',
       );
     }
     try {
