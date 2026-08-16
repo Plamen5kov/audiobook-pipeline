@@ -23,7 +23,7 @@ pipeline is reliable enough to run unattended.
 |---|---|---|
 | `core/` | Domain logic. No HTTP, no web framework, no model transport. | Imported |
 | `services/` | Process boundaries: anything owning a port or a model. | Docker Compose |
-| `studio/`, `hosted/` | The human loop: React frontend, NestJS gateway. | Docker Compose |
+| `hosted/` | The human loop: React frontend, NestJS gateway. | Docker Compose |
 | `corpus/` | Offline CLI pairing book text with professional narration in SQLite. | On the workstation |
 | `tools/` | Batch and one-off scripts. | Ad hoc |
 
