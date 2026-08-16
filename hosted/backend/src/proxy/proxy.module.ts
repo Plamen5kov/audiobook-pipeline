@@ -4,6 +4,7 @@ import { VoicesController } from './voices.controller';
 import { AudioController } from './audio.controller';
 import { StatusController } from './status.controller';
 import { PipelineController } from './pipeline.controller';
+import { JobsController } from './jobs.controller';
 import { ProxyService } from './proxy.service';
 
 @Module({
@@ -13,6 +14,7 @@ import { ProxyService } from './proxy.service';
     AudioController,
     StatusController,
     PipelineController,
+    JobsController,
   ],
   providers: [ProxyService],
 })

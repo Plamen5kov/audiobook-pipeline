@@ -98,6 +98,12 @@ The segments view joins the analysis, the manifest and the QA report, because
 that correlation is the question being asked and doing it in the frontend would
 mean three fetches and a join per screen.
 
+In the browser this is the **Browse Runs** panel
+(`hosted/frontend/src/components/WorkspaceBrowser.tsx`): pick a run, see how far
+it got, open a stage to read what it produced, then go line by line to hear a
+take and tick the ones worth doing again. The NestJS gateway forwards
+`/api/jobs/*` through to studio-api; the browser never talks to it directly.
+
 ```bash
 python3 tools/job.py list                  # every run, how far it got
 python3 tools/job.py show <job>            # stages and artifacts

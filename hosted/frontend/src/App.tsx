@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { usePipeline } from './hooks/usePipeline';
 import { AnalyzeForm } from './components/AnalyzeForm';
 import { StatusProgress } from './components/StatusProgress';
@@ -7,9 +8,11 @@ import { PostProduction } from './components/PostProduction';
 import { ServiceHealth } from './components/ServiceHealth';
 import { PipelineMap } from './components/PipelineMap';
 import { VoiceManager } from './components/VoiceManager';
+import { WorkspaceBrowser } from './components/WorkspaceBrowser';
 
 export default function App() {
   const pipeline = usePipeline();
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
 
   const showProgress  = pipeline.phase !== 'idle';
   const showVoiceCast = pipeline.segments.length > 0 && pipeline.phase !== 'idle' && pipeline.phase !== 'analyzing';
@@ -23,6 +26,9 @@ export default function App() {
         <button className="vm-trigger-btn" onClick={() => pipeline.setVoiceManagerOpen(true)}>
           Manage Voices
         </button>
+        <button className="vm-trigger-btn" onClick={() => setWorkspaceOpen(true)}>
+          Browse Runs
+        </button>
       </header>
 
       <VoiceManager
@@ -30,6 +36,8 @@ export default function App() {
         onClose={() => pipeline.setVoiceManagerOpen(false)}
         onVoicesChanged={pipeline.setVoices}
       />
+
+      <WorkspaceBrowser open={workspaceOpen} onClose={() => setWorkspaceOpen(false)} />
 
       <ServiceHealth />
 

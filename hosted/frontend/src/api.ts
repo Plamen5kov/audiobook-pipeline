@@ -189,3 +189,109 @@ export async function deleteVoice(engine: string, filename: string): Promise<voi
     method: 'DELETE',
   });
 }
+
+// ── Workspace: reading what a run produced ───────────────────
+
+export type StageName =
+  | 'input' | 'analysis' | 'cast' | 'synthesis' | 'assembly' | 'qa';
+
+export const STAGE_ORDER: StageName[] =
+  ['input', 'analysis', 'cast', 'synthesis', 'assembly', 'qa'];
+
+export interface JobSummary {
+  job_id: string;
+  created?: string;
+  stages: Record<StageName, string>;
+  segments_recorded: number;
+}
+
+export interface StageDetail {
+  status: string;
+  at: string;
+  artifact?: string;
+  [key: string]: unknown;
+}
+
+export interface JobDetail extends JobSummary {
+  stage_detail: Record<StageName, StageDetail | null>;
+}
+
+export interface QaVerdict {
+  id: number;
+  status: string;
+  similarity?: number;
+  heard?: string;
+}
+
+export interface WorkspaceSegment {
+  id: number;
+  kind: string;
+  speaker: string;
+  original_text: string;
+  spoken_text: string;
+  emotion: string;
+  intensity: number;
+  pause_before_ms: number;
+  clip: { present: boolean; fingerprint: string | null; url: string };
+  qa: QaVerdict | null;
+}
+
+export interface SegmentsResponse {
+  job_id: string;
+  title?: string;
+  total: number;
+  returned: number;
+  segments: WorkspaceSegment[];
+}
+
+export interface StageArtifacts {
+  stage: string;
+  artifacts?: Record<string, unknown>;
+  files?: string[];
+}
+
+export async function listJobs(): Promise<JobSummary[]> {
+  return request<JobSummary[]>(`${BASE}/api/jobs`);
+}
+
+export async function getJob(jobId: string): Promise<JobDetail> {
+  return request<JobDetail>(`${BASE}/api/jobs/${encodeURIComponent(jobId)}`);
+}
+
+export async function getStageArtifacts(
+  jobId: string,
+  stage: StageName,
+): Promise<StageArtifacts> {
+  return request<StageArtifacts>(
+    `${BASE}/api/jobs/${encodeURIComponent(jobId)}/stages/${stage}`,
+  );
+}
+
+export async function listSegments(
+  jobId: string,
+  opts: { failed?: boolean; speaker?: string } = {},
+): Promise<SegmentsResponse> {
+  const query = new URLSearchParams();
+  if (opts.failed) query.set('failed', 'true');
+  if (opts.speaker) query.set('speaker', opts.speaker);
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return request<SegmentsResponse>(
+    `${BASE}/api/jobs/${encodeURIComponent(jobId)}/segments${suffix}`,
+  );
+}
+
+/** The URL to play one take. Given to an <audio> element rather than fetched. */
+export function segmentAudioUrl(jobId: string, segmentId: number): string {
+  return `${BASE}/api/jobs/${encodeURIComponent(jobId)}/segments/${segmentId}/audio`;
+}
+
+export async function redoSegments(
+  jobId: string,
+  segments: number[],
+): Promise<{ marked: number[]; had_no_clip: number[] }> {
+  return request(`${BASE}/api/jobs/${encodeURIComponent(jobId)}/redo`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ segments }),
+  });
+}
